@@ -1,0 +1,20 @@
+# Model weights and exported models — large binaries, kept out of git.
+# They live in crack_outputs/ on disk and in Google Drive.
+# best.pt 26 MB, last.pt 80 MB, cracknet.onnx.data 26 MB, cracknet_sim.onnx 26 MB
+*.pt
+*.onnx
+*.onnx.data
+
+# TensorRT engines are built on-device and are tied to that specific board and
+# TensorRT version. Never commit or copy them — build_engines.sh regenerates.
+*.engine
+*.log
+
+# Captured frames and recordings
+val_samples/
+*.mp4
+
+# Editor / tooling
+.claude/
+__pycache__/
+*.pyc
