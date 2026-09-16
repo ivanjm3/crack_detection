@@ -9,6 +9,7 @@
     --bg:#fbfbfa; --panel:#ffffff; --ink:#1a1a18; --muted:#5f5f58;
     --line:#e3e1dc; --accent:#b4533a; --accent-soft:#f6ece8;
     --code-bg:#f5f4f1; --ok:#2f6b46; --bad:#a33b2a; --warn:#8a6524;
+    --grid:#d8d5cf;
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   }
   @media (prefers-color-scheme: dark){
@@ -16,6 +17,7 @@
       --bg:#16161a; --panel:#1d1d22; --ink:#e8e6e1; --muted:#a09d95;
       --line:#31313a; --accent:#e08163; --accent-soft:#2a2020;
       --code-bg:#121216; --ok:#7fc79b; --bad:#f0907c; --warn:#d9b263;
+      --grid:#3a3a44;
     }
   }
   *{box-sizing:border-box}
@@ -62,9 +64,28 @@
             font-weight:700;color:var(--accent);display:block;margin-bottom:4px}
   .box.good .lbl{color:var(--ok)} .box.bad .lbl{color:var(--bad)}
   .box p:first-of-type{margin-top:0} .box p:last-child{margin-bottom:0}
-  figure{margin:24px 0}
-  figcaption{font-size:13px;color:var(--muted);margin-top:8px}
+
+  /* stage in/out strip */
+  .io{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;
+      background:var(--panel);border:1px solid var(--line);border-radius:7px;
+      padding:10px 14px;margin:14px 0 22px;font-size:13px}
+  .io b{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;
+        color:var(--muted);font-weight:700}
+  .io span{font-family:var(--mono);font-size:12.5px}
+  .io .arw{color:var(--accent);font-weight:700}
+
+  figure{margin:26px 0}
+  figcaption{font-size:13px;color:var(--muted);margin-top:9px;line-height:1.55}
   svg{max-width:100%;height:auto;display:block}
+  svg text{fill:currentColor}
+  svg .ac{stroke:var(--accent)}      svg .acf{fill:var(--accent)}
+  svg .bd{stroke:var(--bad)}         svg .bdf{fill:var(--bad)}
+  svg .gd{stroke:var(--ok)}          svg .gdf{fill:var(--ok)}
+  svg .gr{stroke:var(--grid)}
+  svg .mut{opacity:.55}
+  svg .fill-bg{fill:var(--bg)}
+  svg .fill-soft{fill:var(--accent-soft)}
+
   .num{font-family:var(--mono);font-size:.9em}
   .qa{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
   .qa .q{font-weight:650;margin-bottom:5px}
@@ -129,88 +150,78 @@ post-processing step that could not distinguish a filament from a blob.</p>
 <section id="chain">
 <h2>The perception chain</h2>
 <figure>
-<svg viewBox="0 0 900 260" role="img" aria-label="Perception pipeline from sensor to decision">
+<svg viewBox="0 0 900 268" role="img"
+     aria-label="Pipeline: sensor through exposure control, crop, resample and normalise into the model; then threshold, components, shape filter, temporal smoothing and decision.">
   <defs>
-    <marker id="a" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+    <marker id="ar" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
       <polygon points="0 0, 9 3.5, 0 7" fill="currentColor"/>
     </marker>
   </defs>
-  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="12"
-     fill="currentColor" color="currentColor">
-    <g stroke="currentColor" stroke-width="1.4" opacity=".45" marker-end="url(#a)">
+  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="12">
+    <g stroke="currentColor" stroke-width="1.4" opacity=".45" marker-end="url(#ar)">
       <line x1="126" y1="52" x2="158" y2="52"/>
       <line x1="286" y1="52" x2="318" y2="52"/>
       <line x1="446" y1="52" x2="478" y2="52"/>
       <line x1="606" y1="52" x2="638" y2="52"/>
       <line x1="766" y1="52" x2="798" y2="52"/>
-      <line x1="126" y1="172" x2="158" y2="172"/>
-      <line x1="286" y1="172" x2="318" y2="172"/>
-      <line x1="446" y1="172" x2="478" y2="172"/>
-      <line x1="606" y1="172" x2="638" y2="172"/>
+      <line x1="126" y1="184" x2="158" y2="184"/>
+      <line x1="286" y1="184" x2="318" y2="184"/>
+      <line x1="446" y1="184" x2="478" y2="184"/>
+      <line x1="606" y1="184" x2="638" y2="184"/>
     </g>
-    <g>
-      <rect x="6" y="28" width="120" height="48" rx="6" fill="none"
-            stroke="currentColor" stroke-width="1.3" opacity=".65"/>
-      <text x="66" y="48" text-anchor="middle" font-weight="600">Sensor</text>
-      <text x="66" y="64" text-anchor="middle" font-size="10.5" opacity=".7">C920 · MJPG</text>
-
-      <rect x="160" y="28" width="126" height="48" rx="6" fill="none"
-            stroke="currentColor" stroke-width="1.3" opacity=".65"/>
-      <text x="223" y="48" text-anchor="middle" font-weight="600">Exposure loop</text>
-      <text x="223" y="64" text-anchor="middle" font-size="10.5" opacity=".7">camera_ctl.py</text>
-
-      <rect x="320" y="28" width="126" height="48" rx="6" fill="none"
-            stroke="currentColor" stroke-width="1.3" opacity=".65"/>
-      <text x="383" y="48" text-anchor="middle" font-weight="600">Centre crop</text>
-      <text x="383" y="64" text-anchor="middle" font-size="10.5" opacity=".7">720×720</text>
-
-      <rect x="480" y="28" width="126" height="48" rx="6" fill="none"
-            stroke="currentColor" stroke-width="1.3" opacity=".65"/>
-      <text x="543" y="48" text-anchor="middle" font-weight="600">Resample</text>
-      <text x="543" y="64" text-anchor="middle" font-size="10.5" opacity=".7">INTER_AREA → 512</text>
-
-      <rect x="640" y="28" width="126" height="48" rx="6" fill="none"
-            stroke="currentColor" stroke-width="1.3" opacity=".65"/>
-      <text x="703" y="48" text-anchor="middle" font-weight="600">Normalise</text>
-      <text x="703" y="64" text-anchor="middle" font-size="10.5" opacity=".7">BGR→RGB, μ/σ</text>
-
-      <rect x="800" y="28" width="94" height="48" rx="6" fill="none"
-            stroke="currentColor" stroke-width="1.8" stroke-dasharray="4 3"/>
-      <text x="847" y="48" text-anchor="middle" font-weight="600">Model</text>
-      <text x="847" y="64" text-anchor="middle" font-size="10.5" opacity=".7">black box</text>
+    <g fill="none" stroke="currentColor" stroke-width="1.3" opacity=".65">
+      <rect x="6" y="28" width="120" height="48" rx="6"/>
+      <rect x="160" y="28" width="126" height="48" rx="6"/>
+      <rect x="320" y="28" width="126" height="48" rx="6"/>
+      <rect x="480" y="28" width="126" height="48" rx="6"/>
+      <rect x="640" y="28" width="126" height="48" rx="6"/>
+      <rect x="6" y="160" width="120" height="48" rx="6"/>
+      <rect x="160" y="160" width="126" height="48" rx="6"/>
+      <rect x="320" y="160" width="126" height="48" rx="6"/>
+      <rect x="480" y="160" width="126" height="48" rx="6"/>
+      <rect x="640" y="160" width="126" height="48" rx="6"/>
     </g>
-    <path d="M847 82 L847 108 L66 108 L66 140" fill="none" stroke="currentColor"
-          stroke-width="1.4" opacity=".45" marker-end="url(#a)"/>
-    <g>
-      <rect x="6" y="148" width="120" height="48" rx="6" fill="none"
-            stroke="currentColor" stroke-width="1.3" opacity=".65"/>
-      <text x="66" y="168" text-anchor="middle" font-weight="600">Threshold</text>
-      <text x="66" y="184" text-anchor="middle" font-size="10.5" opacity=".7">σ &gt; 0.55</text>
+    <rect x="800" y="28" width="94" height="48" rx="6" fill="none"
+          class="ac" stroke-width="1.8" stroke-dasharray="4 3"/>
+    <g text-anchor="middle">
+      <text x="66"  y="48" font-weight="600">Sensor</text>
+      <text x="66"  y="64" font-size="10.5" class="mut">C920 · MJPG</text>
+      <text x="223" y="48" font-weight="600">Exposure loop</text>
+      <text x="223" y="64" font-size="10.5" class="mut">camera_ctl.py</text>
+      <text x="383" y="48" font-weight="600">Centre crop</text>
+      <text x="383" y="64" font-size="10.5" class="mut">720×720</text>
+      <text x="543" y="48" font-weight="600">Resample</text>
+      <text x="543" y="64" font-size="10.5" class="mut">INTER_AREA → 512</text>
+      <text x="703" y="48" font-weight="600">Normalise</text>
+      <text x="703" y="64" font-size="10.5" class="mut">BGR→RGB, μ/σ</text>
+      <text x="847" y="48" font-weight="600" class="acf">Model</text>
+      <text x="847" y="64" font-size="10.5" class="acf" opacity=".8">black box</text>
 
-      <rect x="160" y="148" width="126" height="48" rx="6" fill="none"
-            stroke="currentColor" stroke-width="1.3" opacity=".65"/>
-      <text x="223" y="168" text-anchor="middle" font-weight="600">Components</text>
-      <text x="223" y="184" text-anchor="middle" font-size="10.5" opacity=".7">8-connectivity</text>
-
-      <rect x="320" y="148" width="126" height="48" rx="6" fill="none"
-            stroke="currentColor" stroke-width="1.3" opacity=".65"/>
-      <text x="383" y="168" text-anchor="middle" font-weight="600">Shape filter</text>
-      <text x="383" y="184" text-anchor="middle" font-size="10.5" opacity=".7">width · solidity</text>
-
-      <rect x="480" y="148" width="126" height="48" rx="6" fill="none"
-            stroke="currentColor" stroke-width="1.3" opacity=".65"/>
-      <text x="543" y="168" text-anchor="middle" font-weight="600">Temporal EMA</text>
-      <text x="543" y="184" text-anchor="middle" font-size="10.5" opacity=".7">α = 0.3</text>
-
-      <rect x="640" y="148" width="126" height="48" rx="6" fill="none"
-            stroke="currentColor" stroke-width="1.3" opacity=".65"/>
-      <text x="703" y="168" text-anchor="middle" font-weight="600">Decision</text>
-      <text x="703" y="184" text-anchor="middle" font-size="10.5" opacity=".7">cov &gt; alert-frac</text>
+      <text x="66"  y="180" font-weight="600">Threshold</text>
+      <text x="66"  y="196" font-size="10.5" class="mut">σ &gt; 0.55</text>
+      <text x="223" y="180" font-weight="600">Components</text>
+      <text x="223" y="196" font-size="10.5" class="mut">8-connectivity</text>
+      <text x="383" y="180" font-weight="600">Shape filter</text>
+      <text x="383" y="196" font-size="10.5" class="mut">width · solidity</text>
+      <text x="543" y="180" font-weight="600">Temporal EMA</text>
+      <text x="543" y="196" font-size="10.5" class="mut">α = 0.3</text>
+      <text x="703" y="180" font-weight="600">Decision</text>
+      <text x="703" y="196" font-size="10.5" class="mut">cov &gt; alert-frac</text>
     </g>
-    <text x="6" y="232" font-size="11" opacity=".6">Top row: acquisition → tensor.
-      Bottom row: probability field → decision. The model is the only learned element.</text>
+    <path d="M847 82 L847 118 L66 118 L66 152" fill="none" stroke="currentColor"
+          stroke-width="1.4" opacity=".45" marker-end="url(#ar)"/>
+    <text x="456" y="113" text-anchor="middle" font-size="10.5" class="mut">logits [1,1,512,512]</text>
+    <g class="mut" font-size="10.5">
+      <text x="6" y="16">ACQUISITION → TENSOR</text>
+      <text x="6" y="148">PROBABILITY FIELD → DECISION</text>
+    </g>
+    <text x="6" y="240" font-size="11" class="mut">Only the dashed box is learned.
+      Everything else is engineering, and is where every large failure came from.</text>
   </g>
 </svg>
+<figcaption>The full chain. The model sits between two halves of roughly equal
+length: getting a correct tensor <em>into</em> it, and turning its raw output into
+a stable decision.</figcaption>
 </figure>
 </section>
 
@@ -253,6 +264,9 @@ perturb the measurement.</td></tr>
 <table>
 <thead><tr><th>File</th><th>Constitutes</th><th>Role</th></tr></thead>
 <tbody>
+<tr><td><code>jetson/cracknet.sh</code></td><td>Lifecycle: start, stop, restart, status,
+check, logs</td><td>Single entry point. Preflight → performance mode → camera lock →
+server, waiting for a real frame before reporting success.</td></tr>
 <tr><td><code>jetson/build_engines.sh</code></td><td><code>trtexec</code> invocations for
 FP16 and FP32</td><td>Produces the engines. FP32 exists only as a numerical
 reference for the parity check.</td></tr>
@@ -271,8 +285,7 @@ room cannot test it.</td></tr>
 <tr><td><code>jetson/test_autoexposure.py</code></td><td>On-camera recovery smoke
 test</td><td>Confirms stage 2 escapes both saturation extremes on real hardware.</td></tr>
 <tr><td><code>jetson/run_server.sh</code></td><td>Start/restart wrapper</td>
-<td>Operations. Its <code>pkill</code> pattern deliberately avoids matching its own
-command line.</td></tr>
+<td>Superseded by <code>cracknet.sh start</code>; retained for muscle memory.</td></tr>
 </tbody>
 </table>
 
@@ -281,6 +294,8 @@ command line.</td></tr>
 <thead><tr><th>File</th><th>Constitutes</th></tr></thead>
 <tbody>
 <tr><td><code>docs/perception.html</code></td><td>This document.</td></tr>
+<tr><td><code>docs/commands.md</code></td><td>Driving the Jetson from PowerShell on the
+Windows side: connect, start/stop, deploy, diagnose, troubleshoot.</td></tr>
 <tr><td><code>docs/WORKLOG-2026-09-16.md</code></td><td>Chronological build log: problem,
 cause, fix, result — including the approaches that failed.</td></tr>
 <tr><td><code>jetson/README.md</code></td><td>Operator-facing: file index, run commands,
@@ -306,25 +321,70 @@ tied to one board and TensorRT version and must never be copied.</td></tr>
 <!-- ===================== STAGE 1 ===================== -->
 <section id="s1">
 <h2>1 · Acquisition</h2>
+<div class="io">
+  <b>in</b><span>photons</span><span class="arw">→</span>
+  <b>out</b><span>1280×720 BGR uint8 @ ~22 fps</span>
+  <span class="arw">·</span><b>file</b><span>live.py :: open_c920()</span>
+</div>
 
 <h3>Why the pixel format is a perception decision</h3>
-<p>The C920 offers two formats over USB 2.0, whose practical ceiling is around
-480 Mbit/s shared with protocol overhead. Uncompressed YUYV at 1280×720 is
-16 bits per pixel:</p>
-<p class="num">1280 × 720 × 16 bits × 30 fps ≈ 442 Mbit/s</p>
-<p>That does not fit, so the camera silently negotiates down to roughly 10 fps.
-MJPG compresses in-camera and sustains 30 fps. The cost is JPEG quantisation —
-an 8×8 block DCT that discards high-frequency detail, which is precisely where a
-hairline crack lives. This is a real trade: we accept mild high-frequency loss to
-avoid a 3× frame-rate loss, because motion blur from a slow frame rate destroys
-more crack evidence than JPEG does.</p>
+<p>The C920 offers two formats. Uncompressed YUYV at 1280×720 is 16 bits per pixel,
+which at 30 fps needs more bandwidth than USB 2.0 will actually carry for
+isochronous video:</p>
+
+<figure>
+<svg viewBox="0 0 760 196" role="img"
+     aria-label="YUYV at 720p30 needs 442 Mbit per second, which exceeds the practical USB 2.0 video payload ceiling of roughly 320. MJPG needs about 45 and fits easily.">
+  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="12">
+    <!-- axis -->
+    <line x1="120" y1="150" x2="716" y2="150" stroke="currentColor" stroke-width="1" opacity=".5"/>
+    <g class="mut" font-size="10.5" text-anchor="middle">
+      <text x="120" y="167">0</text>
+      <text x="236" y="167">100</text>
+      <text x="352" y="167">200</text>
+      <text x="468" y="167">300</text>
+      <text x="584" y="167">400</text>
+      <text x="700" y="167">500</text>
+      <text x="418" y="185">Mbit/s</text>
+    </g>
+
+    <!-- ceilings -->
+    <line x1="491" y1="24" x2="491" y2="150" class="bd" stroke-width="1.6" stroke-dasharray="5 3"/>
+    <text x="497" y="36" class="bdf" font-size="11">practical video payload ≈ 320</text>
+    <line x1="677" y1="24" x2="677" y2="150" stroke="currentColor" stroke-width="1"
+          stroke-dasharray="3 3" opacity=".45"/>
+    <text x="671" y="36" text-anchor="end" font-size="11" class="mut">USB 2.0 signalling 480</text>
+
+    <!-- YUYV bar: 442 -->
+    <rect x="120" y="58" width="513" height="26" rx="3" fill="none" class="bd" stroke-width="1.6"/>
+    <text x="114" y="76" text-anchor="end" font-weight="600">YUYV</text>
+    <text x="643" y="76" font-size="11" class="bdf">442 — does not fit</text>
+
+    <!-- MJPG bar: 45 -->
+    <rect x="120" y="102" width="52" height="26" rx="3" class="gdf" opacity=".28"/>
+    <rect x="120" y="102" width="52" height="26" rx="3" fill="none" class="gd" stroke-width="1.6"/>
+    <text x="114" y="120" text-anchor="end" font-weight="600">MJPG</text>
+    <text x="182" y="120" font-size="11" class="gdf">≈ 45 — fits, 30 fps sustained</text>
+
+    <text x="120" y="20" font-size="11" class="mut">1280 × 720 × 16 bit × 30 fps = 442 Mbit/s</text>
+  </g>
+</svg>
+<figcaption>YUYV overruns the link, so the camera silently negotiates down to
+roughly 10 fps. MJPG compresses in-camera and sustains 30. The cost is JPEG
+quantisation — an 8×8 block DCT that discards exactly the high-frequency detail a
+hairline crack lives in.</figcaption>
+</figure>
+
+<p>This is a real trade, taken deliberately: mild high-frequency loss is cheaper
+than a 3× frame-rate loss, because the motion blur that comes with slow capture
+destroys more crack evidence than JPEG does.</p>
 
 <div class="box bad">
 <span class="lbl">Ordering trap</span>
 <p>The FOURCC must be set <em>before</em> width and height. Set afterwards, the
 driver has already committed to YUYV and silently caps at ~10 fps, with no error
-anywhere. A frame rate that is quietly 3× too low is the hardest kind of bug to
-notice, because everything still works.</p>
+anywhere. A frame rate quietly 3× too low is the hardest kind of bug to notice,
+because everything still works.</p>
 </div>
 
 <pre><code><span class="cm"># live.py</span>
@@ -344,7 +404,7 @@ notice, because everything still works.</p>
 
 <h3>Latency versus freshness</h3>
 <p><code>CAP_PROP_BUFFERSIZE = 1</code> asks the driver to keep the queue shallow.
-In a perception loop, a stale frame is worse than a dropped one: acting on
+In a perception loop a stale frame is worse than a dropped one: acting on
 100 ms-old evidence means the overlay describes where the camera <em>was</em>.
 Note the caveat — this reduces queueing but does <strong>not</strong> suppress the
 transient frames discussed in stage 2.</p>
@@ -360,21 +420,75 @@ list, and observed here as <code>exposure_time_absolute</code> silently revertin
 <!-- ===================== STAGE 2 ===================== -->
 <section id="s2">
 <h2>2 · Photometric control</h2>
+<div class="io">
+  <b>in</b><span>frame + current exposure/gain</span><span class="arw">→</span>
+  <b>out</b><span>new exposure/gain on the sensor</span>
+  <span class="arw">·</span><b>file</b><span>camera_ctl.py :: AutoExposure</span>
+</div>
 
 <h3>The core argument: clipping is irreversible</h3>
 <p>A crack is a low-contrast dark line on a brighter surface. Detection depends
-entirely on the difference between crack pixels and surround. When the surround
-saturates, every pixel there reads 255 regardless of the true radiance — the
+entirely on the difference between crack pixels and their surround. When the
+surround saturates, every pixel there reads 255 regardless of true radiance — the
 mapping from scene to sensor stops being injective, and the contrast carrying the
 crack is destroyed <em>at the sensor</em>.</p>
+
+<figure>
+<svg viewBox="0 0 760 270" role="img"
+     aria-label="Intensity profile across a crack. Correctly exposed, the recorded signal follows the scene and the crack appears as a dip. Overexposed, both surface and crack exceed 255 and record as a flat line: the dip is gone.">
+  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="12">
+    <!-- ================= LEFT: correct ================= -->
+    <text x="60" y="20" font-weight="600">Correctly exposed</text>
+    <!-- axes -->
+    <line x1="60" y1="60" x2="350" y2="60" stroke="currentColor" stroke-width="1"
+          stroke-dasharray="3 3" opacity=".45"/>
+    <text x="54" y="64" text-anchor="end" font-size="10.5" class="mut">255</text>
+    <line x1="60" y1="210" x2="350" y2="210" stroke="currentColor" stroke-width="1" opacity=".5"/>
+    <line x1="60" y1="60" x2="60" y2="210" stroke="currentColor" stroke-width="1" opacity=".5"/>
+    <text x="54" y="214" text-anchor="end" font-size="10.5" class="mut">0</text>
+    <!-- recorded = true -->
+    <polyline points="70,105 150,105 165,105 180,143 195,143 210,105 225,105 340,105"
+              fill="none" class="gd" stroke-width="2.4"/>
+    <!-- contrast bracket -->
+    <line x1="252" y1="105" x2="252" y2="143" class="gd" stroke-width="1.2"/>
+    <line x1="247" y1="105" x2="257" y2="105" class="gd" stroke-width="1.2"/>
+    <line x1="247" y1="143" x2="257" y2="143" class="gd" stroke-width="1.2"/>
+    <text x="262" y="128" font-size="11" class="gdf">contrast<tspan x="262" dy="13">preserved</tspan></text>
+    <text x="187" y="232" text-anchor="middle" font-size="10.5" class="mut">position across the crack</text>
+    <text x="187" y="170" text-anchor="middle" font-size="10.5" class="mut">crack</text>
+
+    <!-- ================= RIGHT: clipped ================= -->
+    <text x="420" y="20" font-weight="600">Overexposed</text>
+    <line x1="420" y1="60" x2="710" y2="60" class="bd" stroke-width="1.4" stroke-dasharray="3 3"/>
+    <text x="414" y="64" text-anchor="end" font-size="10.5" class="mut">255</text>
+    <line x1="420" y1="210" x2="710" y2="210" stroke="currentColor" stroke-width="1" opacity=".5"/>
+    <line x1="420" y1="60" x2="420" y2="210" stroke="currentColor" stroke-width="1" opacity=".5"/>
+    <text x="414" y="214" text-anchor="end" font-size="10.5" class="mut">0</text>
+    <!-- true scene radiance, above the ceiling -->
+    <polyline points="430,32 510,32 525,32 540,48 555,48 570,32 585,32 700,32"
+              fill="none" stroke="currentColor" stroke-width="1.4"
+              stroke-dasharray="4 3" opacity=".55"/>
+    <text x="706" y="30" text-anchor="end" font-size="10.5" class="mut">true scene radiance</text>
+    <!-- recorded: flat at 255 -->
+    <line x1="430" y1="60" x2="700" y2="60" class="bd" stroke-width="2.4"/>
+    <text x="547" y="88" text-anchor="middle" font-size="11" class="bdf">recorded: flat 255</text>
+    <text x="547" y="106" text-anchor="middle" font-size="11" class="bdf">crack dip is gone</text>
+    <text x="547" y="232" text-anchor="middle" font-size="10.5" class="mut">position across the crack</text>
+  </g>
+</svg>
+<figcaption>Left: the recorded signal tracks the scene, and the crack is a
+measurable dip. Right: surface and crack both exceed the sensor's ceiling, so both
+record as 255. The difference that <em>is</em> the crack no longer exists in the
+data.</figcaption>
+</figure>
 
 <div class="box">
 <span class="lbl">Why no filter can fix it</span>
 <p>CLAHE, histogram equalisation and gamma all operate on recorded values. Once a
-region is uniformly 255, there is no recorded variation to stretch. Contrast
+region is uniformly 255 there is no recorded variation to stretch. Contrast
 enhancement of clipped data amplifies quantisation and noise into crack-like
-filaments — it makes false positives, not detections. The only place this is
-fixable is exposure.</p>
+filaments — it manufactures false positives rather than recovering detections. The
+only place this is fixable is exposure.</p>
 </div>
 
 <h3>Two actuators, not one</h3>
@@ -390,13 +504,68 @@ fixable is exposure.</p>
 </table>
 
 <p>Both raise brightness; they are not interchangeable. Exposure is nearly free
-until motion blur sets in, gain is never free. Hence a strict ladder: exposure is
-always preferred, gain is the reserve. On first contact this camera was found at
-<code>gain = 255</code> — its maximum, default 0 — left there by the firmware's own
-auto-exposure before manual mode was set.</p>
+until motion blur sets in; gain is never free. Hence a strict ladder — and the
+ladder is what makes the catastrophic state unreachable:</p>
+
+<figure>
+<svg viewBox="0 0 700 300" role="img"
+     aria-label="State space of exposure against gain. Brightening moves right along the gain-zero axis, then up only at maximum exposure. Darkening moves down to zero gain, then left. The corner at minimum exposure with maximum gain is never entered.">
+  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="12">
+    <!-- axes -->
+    <line x1="90" y1="240" x2="640" y2="240" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
+    <line x1="90" y1="240" x2="90" y2="40" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
+    <text x="365" y="272" text-anchor="middle" font-size="11" class="mut">exposure  →  (3 … 500 cap)</text>
+    <text x="52" y="140" text-anchor="middle" font-size="11" class="mut" transform="rotate(-90 52 140)">gain  →  (0 … 160 cap)</text>
+    <text x="90" y="258" text-anchor="middle" font-size="10.5" class="mut">min</text>
+    <text x="560" y="258" text-anchor="middle" font-size="10.5" class="mut">cap</text>
+    <text x="80" y="244" text-anchor="end" font-size="10.5" class="mut">0</text>
+    <text x="80" y="76" text-anchor="end" font-size="10.5" class="mut">cap</text>
+
+    <!-- the operating path: L shape -->
+    <polyline points="90,240 560,240 560,70" fill="none" class="gd" stroke-width="3"/>
+    <text x="300" y="232" text-anchor="middle" font-size="11" class="gdf">gain stays 0 while exposure has room</text>
+    <text x="572" y="150" font-size="11" class="gdf">gain only<tspan x="572" dy="14">at max</tspan><tspan x="572" dy="14">exposure</tspan></text>
+
+    <!-- brighten arrows -->
+    <defs>
+      <marker id="ag" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto">
+        <polygon points="0 0, 8 3.5, 0 7" fill="currentColor"/>
+      </marker>
+    </defs>
+    <g stroke="currentColor" opacity=".65" stroke-width="1.5" marker-end="url(#ag)">
+      <line x1="150" y1="224" x2="250" y2="224"/>
+      <line x1="576" y1="200" x2="576" y2="130"/>
+      <line x1="544" y1="120" x2="544" y2="196"/>
+      <line x1="450" y1="256" x2="350" y2="256"/>
+    </g>
+    <text x="200" y="217" text-anchor="middle" font-size="10.5" class="mut">brighten ①</text>
+    <text x="600" y="168" font-size="10.5" class="mut">brighten ②</text>
+    <text x="516" y="160" text-anchor="end" font-size="10.5" class="mut">darken ①</text>
+    <text x="400" y="270" text-anchor="middle" font-size="10.5" class="mut">darken ②</text>
+
+    <!-- forbidden corner -->
+    <rect x="92" y="52" width="86" height="56" rx="5" fill="none" class="bd"
+          stroke-width="1.6" stroke-dasharray="4 3"/>
+    <line x1="104" y1="64" x2="166" y2="96" class="bd" stroke-width="2"/>
+    <line x1="166" y1="64" x2="104" y2="96" class="bd" stroke-width="2"/>
+    <text x="186" y="72" font-size="11" class="bdf">exposure = 3, gain = 255</text>
+    <text x="186" y="88" font-size="10.5" class="mut">darkest and noisiest at once —</text>
+    <text x="186" y="103" font-size="10.5" class="mut">the ladder never reaches it</text>
+  </g>
+</svg>
+<figcaption>The ordering is a safety property, not a preference. Brightening
+touches gain only at maximum exposure; darkening touches exposure only at zero
+gain. The top-left corner — which an earlier version actually reached and could not
+escape — is unreachable by construction.</figcaption>
+</figure>
+
+<p>On first contact this camera was found at <code>gain = 255</code>, its maximum
+(default 0), left there by the firmware's own auto-exposure before manual mode was
+set.</p>
 
 <h3>Choice of control metric</h3>
-<p>The loop needs one scalar per frame. The choice determines whether it converges.</p>
+<p>The loop needs one scalar per frame. That choice determines whether it converges
+at all.</p>
 <table>
 <thead><tr><th>Metric</th><th>Behaviour</th><th>Verdict</th></tr></thead>
 <tbody>
@@ -404,24 +573,74 @@ auto-exposure before manual mode was set.</p>
 reads high by definition</td><td>Weak on uniform surfaces</td></tr>
 <tr><td>99th percentile → 235</td><td>Aims highlights just under clipping. But on a
 bimodal scene (dark room + bright window) p99 is either ~216 or saturated and
-never lands on target</td><td><strong>Failed</strong> — limit cycle, exposure swung
-311 ↔ 532</td></tr>
+never lands on target</td><td><strong>Failed</strong> — limit cycle</td></tr>
 <tr><td>Median → 120</td><td>Robust to small bright regions; represents the
 inspected surface, which fills most of the frame</td><td><strong>Used.</strong>
 Always reachable, so the loop converges</td></tr>
 </tbody>
 </table>
 
+<p>Three designs were built. The first two failed in distinct ways, and the shape
+of each failure is the argument for the third:</p>
+
+<figure>
+<svg viewBox="0 0 760 240" role="img"
+     aria-label="Three exposure-versus-time traces. Attempt one oscillates between 311 and 532. Attempt two collapses to the exposure floor and sticks while gain rises to maximum. Attempt three converges into the target band and stays.">
+  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">
+    <!-- panel 1 -->
+    <text x="30" y="18" font-weight="600" font-size="12">① p99 target 235</text>
+    <text x="30" y="33" class="mut">unreachable setpoint</text>
+    <rect x="30" y="52" width="200" height="128" fill="none" class="gr" stroke-width="1"/>
+    <polyline points="34,150 58,96 82,150 106,96 130,150 154,96 178,150 202,96 226,150"
+              fill="none" class="bd" stroke-width="2"/>
+    <text x="130" y="198" text-anchor="middle" class="bdf">swings 311 ↔ 532</text>
+    <text x="130" y="213" text-anchor="middle" class="mut">never settles</text>
+
+    <!-- panel 2 -->
+    <text x="280" y="18" font-weight="600" font-size="12">② + anti-windup ceiling</text>
+    <text x="280" y="33" class="mut">one-way ratchet</text>
+    <rect x="280" y="52" width="200" height="128" fill="none" class="gr" stroke-width="1"/>
+    <polyline points="284,84 308,104 332,130 356,152 380,168 404,174 476,174"
+              fill="none" class="bd" stroke-width="2"/>
+    <text x="470" y="167" text-anchor="end" class="bdf">exposure floor</text>
+    <polyline points="284,166 320,150 360,124 400,96 440,72 476,64"
+              fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="4 3" opacity=".6"/>
+    <text x="476" y="80" text-anchor="end" class="mut">gain → 255</text>
+    <text x="380" y="198" text-anchor="middle" class="bdf">stuck, cannot recover</text>
+    <text x="380" y="213" text-anchor="middle" class="mut">black and noisy</text>
+
+    <!-- panel 3 -->
+    <text x="530" y="18" font-weight="600" font-size="12">③ median target 120</text>
+    <text x="530" y="33" class="mut">reachable, no ratchet</text>
+    <rect x="530" y="52" width="200" height="128" fill="none" class="gr" stroke-width="1"/>
+    <rect x="530" y="104" width="200" height="26" class="fill-soft"/>
+    <text x="726" y="121" text-anchor="end" class="mut">target band</text>
+    <polyline points="534,172 552,140 570,120 590,110 612,116 634,117 726,117"
+              fill="none" class="gd" stroke-width="2.2"/>
+    <text x="630" y="198" text-anchor="middle" class="gdf">converges and holds</text>
+    <text x="630" y="213" text-anchor="middle" class="mut">recovers from either extreme</text>
+
+    <text x="30" y="234" class="mut">vertical: exposure    ·    horizontal: time</text>
+  </g>
+</svg>
+<figcaption>Attempt ① winds up against a target it can never reach. Attempt ② adds
+a ceiling that only ever decreases, so a white wall ratchets it below the exposure
+floor and the out-of-headroom branch then drives gain to maximum — the one state
+the system cannot recover from. Attempt ③ removes the need for a ceiling by
+choosing a target that is always reachable.</figcaption>
+</figure>
+
 <div class="box good">
 <span class="lbl">Principle</span>
-<p>A control target must be <em>reachable</em>. An unreachable setpoint makes an
-integrating controller wind up indefinitely — and the instinctive fix, clamping
-the output, is what produced the worst bug in this project.</p>
+<p>A control target must be <em>reachable</em>. An unreachable setpoint makes a
+controller wind up indefinitely — and the instinctive fix, clamping the output with
+a one-way limit, is what produced the worst bug in this project. No monotone
+ratchet belongs in a controller for a camera that gets re-aimed.</p>
 </div>
 
 <h3>The control law</h3>
 <p>Luma is approximately linear in exposure, so <code>target / median</code> is a
-Newton step. It is damped (exponent 0.6) and the per-step ratio is clamped so one
+Newton step. It is damped (exponent 0.6) and the per-step ratio is clamped, so one
 bad frame cannot cause a large jump.</p>
 
 <pre><code><span class="cm"># camera_ctl.py — core of update()</span>
@@ -448,38 +667,78 @@ ratio = float(np.clip(target / max(med, 1.0), 0.4, 2.5)) ** self.damp
     <span class="kw">if</span>   self.gain &gt; GAIN_MIN:      self._apply_gain(self.gain - gstep)
     <span class="kw">else</span>:                           self._apply_exposure(self.exp * ratio)</code></pre>
 
-<p>Read the ladder carefully — the ordering is the safety property. Brightening
-touches gain <em>only</em> at maximum exposure; darkening touches exposure
-<em>only</em> at zero gain. The pathological state (minimum exposure with maximum
-gain) is therefore unreachable, not merely unlikely.</p>
-
 <h3>Deadband, and why convergence is not the end</h3>
 <p>Without a deadband the loop oscillates around the setpoint forever, and every
-actuation costs frames. With one, the loop stops when close enough. But stopping
-is not sufficient: the ladder can converge on correct brightness at a <em>noisy</em>
-operating point — measured once at <code>exposure=71, gain=111</code>. The deadband
-branch therefore performs a slow quality migration, trading gain down and exposure
-up at constant brightness until gain reaches zero. Same luma, less noise.</p>
+actuation costs frames. With one, it stops when close enough. But stopping is not
+sufficient: the ladder can converge on <em>correct brightness at a noisy operating
+point</em> — measured once at <code>exposure=71, gain=111</code>. The deadband branch
+therefore performs a slow quality migration, trading gain down and exposure up at
+constant brightness until gain reaches zero. Same luma, less noise.</p>
 
 <h3>Actuation lag and transient frames</h3>
 <p>The single hardest observation in this project:</p>
 <pre><code>exposure=500  gain=0   median=  4     <span class="cm"># nearly black</span>
 exposure=500  gain=0   median=241     <span class="cm"># same settings, nearly white</span></code></pre>
 <p>Identical actuator state, opposite measurements. The C920 emits black or blown
-frames for several frames after any control change, and a change takes a few
-frames to take effect at all. A controller that measures during this window is
-reading noise and reacting to it — which is how a stable loop becomes a thrashing
-one.</p>
-<p>Three defences, all required:</p>
-<ol>
-<li><strong>Flush</strong> — <code>cap.grab()</code> discards in-flight frames after every change.</li>
-<li><strong>Blind period</strong> — no measurement for ~0.5 s after a change.</li>
-<li><strong>EMA smoothing</strong> — <code>med = 0.5·med + 0.5·new</code>, so a single
-surviving transient cannot move the estimate far.</li>
-</ol>
+frames for several frames after any control change, and the change itself takes a
+few frames to take effect. A controller that measures inside that window is reading
+noise and reacting to it — which is how a stable loop becomes a thrashing one.</p>
+
+<figure>
+<svg viewBox="0 0 760 210" role="img"
+     aria-label="Timeline of frames after a control change: two garbage frames, then frames still showing the old exposure, then valid frames. The flush discards the first frames, a blind period covers the rest, and only then is a measurement taken.">
+  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">
+    <!-- frames -->
+    <g>
+      <rect x="60"  y="70" width="56" height="42" rx="4" fill="none" class="bd" stroke-width="1.6"/>
+      <rect x="124" y="70" width="56" height="42" rx="4" fill="none" class="bd" stroke-width="1.6"/>
+      <rect x="188" y="70" width="56" height="42" rx="4" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".5"/>
+      <rect x="252" y="70" width="56" height="42" rx="4" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".5"/>
+      <rect x="316" y="70" width="56" height="42" rx="4" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".5"/>
+      <rect x="380" y="70" width="56" height="42" rx="4" fill="none" class="gd" stroke-width="1.8"/>
+      <rect x="444" y="70" width="56" height="42" rx="4" fill="none" class="gd" stroke-width="1.8"/>
+    </g>
+    <g text-anchor="middle" font-size="10.5">
+      <text x="88"  y="95" class="bdf">0</text>
+      <text x="152" y="95" class="bdf">255</text>
+      <text x="216" y="95" class="mut">old</text>
+      <text x="280" y="95" class="mut">old</text>
+      <text x="344" y="95" class="mut">old</text>
+      <text x="408" y="95" class="gdf">valid</text>
+      <text x="472" y="95" class="gdf">valid</text>
+    </g>
+    <g text-anchor="middle" font-size="10" class="mut">
+      <text x="88"  y="127">garbage</text>
+      <text x="152" y="127">garbage</text>
+      <text x="280" y="127">actuation lag</text>
+      <text x="440" y="127">new exposure visible</text>
+    </g>
+
+    <!-- change marker -->
+    <line x1="52" y1="52" x2="52" y2="130" class="ac" stroke-width="2"/>
+    <text x="52" y="44" text-anchor="middle" class="acf" font-size="11">set exposure</text>
+
+    <!-- windows -->
+    <line x1="60" y1="152" x2="372" y2="152" stroke="currentColor" stroke-width="1.4" opacity=".55"/>
+    <line x1="60" y1="146" x2="60" y2="158" stroke="currentColor" stroke-width="1.4" opacity=".55"/>
+    <line x1="372" y1="146" x2="372" y2="158" stroke="currentColor" stroke-width="1.4" opacity=".55"/>
+    <text x="216" y="170" text-anchor="middle" class="mut">flush cap.grab() ×5  +  blind ~0.5 s</text>
+
+    <line x1="380" y1="152" x2="500" y2="152" class="gd" stroke-width="1.8"/>
+    <text x="440" y="170" text-anchor="middle" class="gdf">first measurement</text>
+
+    <text x="60" y="196" class="mut">Without the flush and blind window the loop measures the
+      garbage frames and corrects against noise.</text>
+  </g>
+</svg>
+<figcaption>Three defences, all required: flush the in-flight frames, stay blind
+until the change lands, and smooth what survives
+(<code>med = 0.5·med + 0.5·new</code>) so one stray transient cannot move the
+estimate far.</figcaption>
+</figure>
 
 <h3>Testing a control loop you cannot hold still</h3>
-<p>With a person moving in frame, the median swings 19 ↔ 178 <em>at fixed
+<p>With a person moving in frame the median swings 19 ↔ 178 <em>at fixed
 settings</em>. Any live pass/fail is measuring the room, not the controller. The
 control law is therefore tested against a simulated sensor that reproduces the
 response curve, the actuation lag and the transient frames:</p>
@@ -498,16 +757,76 @@ specification.</p>
 <!-- ===================== STAGE 3 ===================== -->
 <section id="s3">
 <h2>3 · Geometric normalisation</h2>
+<div class="io">
+  <b>in</b><span>1280×720 BGR</span><span class="arw">→</span>
+  <b>out</b><span>512×512 BGR</span>
+  <span class="arw">·</span><b>file</b><span>live.py :: center_square() + cv2.resize</span>
+</div>
 
 <h3>Crop, do not stretch</h3>
-<p>The camera delivers 16:9; the model consumes 1:1. Resizing 1280×720 directly
-to 512×512 scales x by 0.40 and y by 0.71 — an anisotropic transform. A crack at
-45° changes apparent angle, and crack <em>width</em> becomes direction-dependent:
-the same physical fissure measures differently horizontally and vertically.</p>
-<p>The model never saw that during training, and width is the feature stage 6
-filters on. Anisotropic scaling would corrupt both the network's input statistics
-and our own geometric reasoning. Centre-cropping preserves the aspect ratio
-exactly; the cost is losing the left and right thirds of the field of view.</p>
+<p>The camera delivers 16:9; the model consumes 1:1. Squashing 1280×720 into
+512×512 scales x by 0.40 and y by 0.71 — an anisotropic transform.</p>
+
+<figure>
+<svg viewBox="0 0 760 300" role="img"
+     aria-label="Stretching a 16:9 frame to square turns a circle into an ellipse and changes the angle and width of a diagonal crack. Centre-cropping keeps both, at the cost of discarding the left and right thirds.">
+  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">
+    <!-- source frame -->
+    <text x="30" y="20" font-weight="600" font-size="12">source 1280×720</text>
+    <rect x="30" y="34" width="240" height="135" fill="none" stroke="currentColor"
+          stroke-width="1.4" opacity=".7"/>
+    <circle cx="150" cy="101" r="34" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".6"/>
+    <line x1="112" y1="139" x2="188" y2="63" class="ac" stroke-width="3"/>
+    <text x="150" y="186" text-anchor="middle" class="mut">crack at 45°, uniform width</text>
+
+    <!-- arrow down-left: stretch -->
+    <defs>
+      <marker id="a3" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto">
+        <polygon points="0 0, 8 3.5, 0 7" fill="currentColor"/>
+      </marker>
+    </defs>
+    <line x1="280" y1="80" x2="330" y2="80" stroke="currentColor" stroke-width="1.5"
+          opacity=".6" marker-end="url(#a3)"/>
+    <text x="305" y="72" text-anchor="middle" class="mut">stretch</text>
+    <line x1="280" y1="150" x2="330" y2="150" stroke="currentColor" stroke-width="1.5"
+          opacity=".6" marker-end="url(#a3)"/>
+    <text x="305" y="142" text-anchor="middle" class="mut">crop</text>
+
+    <!-- stretched result -->
+    <text x="350" y="20" font-weight="600" font-size="12" class="bdf">stretched to 1:1</text>
+    <rect x="350" y="34" width="112" height="112" fill="none" class="bd" stroke-width="1.6"/>
+    <ellipse cx="406" cy="90" rx="16" ry="28" fill="none" class="bd" stroke-width="1.3"/>
+    <line x1="388" y1="122" x2="424" y2="58" class="bd" stroke-width="4"/>
+    <text x="350" y="163" class="bdf">circle → ellipse</text>
+    <text x="350" y="178" class="bdf">angle changed, width now</text>
+    <text x="350" y="193" class="bdf">direction-dependent</text>
+
+    <!-- cropped result -->
+    <text x="530" y="20" font-weight="600" font-size="12" class="gdf">centre-cropped 720×720</text>
+    <rect x="530" y="34" width="112" height="112" fill="none" class="gd" stroke-width="1.6"/>
+    <circle cx="586" cy="90" r="26" fill="none" class="gd" stroke-width="1.3"/>
+    <line x1="557" y1="119" x2="615" y2="61" class="gd" stroke-width="3"/>
+    <text x="530" y="163" class="gdf">geometry preserved exactly</text>
+    <text x="530" y="178" class="mut">cost: left and right thirds</text>
+    <text x="530" y="193" class="mut">of the field of view discarded</text>
+
+    <!-- discarded region illustration -->
+    <g opacity=".5">
+      <rect x="30" y="222" width="240" height="56" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <rect x="30" y="222" width="52" height="56" class="bdf" opacity=".22"/>
+      <rect x="218" y="222" width="52" height="56" class="bdf" opacity=".22"/>
+      <rect x="82" y="222" width="136" height="56" fill="none" class="gd" stroke-width="1.6"/>
+    </g>
+    <text x="150" y="254" text-anchor="middle" class="gdf" font-size="10.5">kept</text>
+    <text x="56"  y="254" text-anchor="middle" class="mut" font-size="10.5">lost</text>
+    <text x="244" y="254" text-anchor="middle" class="mut" font-size="10.5">lost</text>
+    <text x="290" y="254" class="mut">tile twice to recover the full width, at 2× inference</text>
+  </g>
+</svg>
+<figcaption>Width is the feature stage 6 filters on, so anisotropic scaling would
+corrupt both the network's input statistics and our own geometric reasoning. The
+crop trades field of view for measurement validity.</figcaption>
+</figure>
 
 <pre><code><span class="kw">def</span> center_square(frame):
     <span class="kw">"""Crop the central HxH square so the model sees undistorted geometry."""</span>
@@ -523,34 +842,93 @@ crack <em>is</em> high-frequency detail. <code>INTER_LINEAR</code> samples four
 neighbours and misses most source pixels. <code>INTER_AREA</code> averages over the
 full source footprint of each destination pixel, which is the correct
 anti-aliasing operation for minification.</p>
-<p>The practical difference: with linear interpolation a hairline crack flickers
-in and out between frames as sub-pixel alignment shifts. With area averaging it
-dims but stays present.</p>
+<p>The practical difference: with linear interpolation a hairline crack flickers in
+and out between frames as sub-pixel alignment shifts. With area averaging it dims
+but stays present.</p>
 
 <h3>The resolution budget</h3>
-<p>This constrains the whole system and is worth stating numerically. A crack
-2 px wide in the 720×720 crop becomes:</p>
+<p>This constrains the whole system. A crack 2 px wide in the 720×720 crop becomes:</p>
 <p class="num">2 px × (512 / 720) = 1.42 px</p>
-<p>Near the sampling limit, before JPEG quantisation. This is why standoff
-distance matters more than any parameter: CRACK500 was photographed close enough
-that cracks span many pixels. Doubling the distance halves crack width in pixels
-and can push it below detectability regardless of how well everything else is
-tuned.</p>
-<div class="box">
-<span class="lbl">If full width is needed</span>
-<p>Split the frame into two overlapping 720×720 tiles and stitch the masks. Costs
-2× inference — affordable here, since at 18.4 ms the loop is camera-bound at
-~22 fps, not compute-bound.</p>
-</div>
+<p>Near the sampling limit, before JPEG quantisation. This is why standoff distance
+matters more than any parameter: CRACK500 was photographed close enough that cracks
+span many pixels. Doubling the distance halves crack width in pixels and can push
+it below detectability regardless of how well everything else is tuned.</p>
 </section>
 
 <!-- ===================== STAGE 4 ===================== -->
 <section id="s4">
 <h2>4 · Colour and numeric normalisation</h2>
+<div class="io">
+  <b>in</b><span>512×512×3 BGR uint8</span><span class="arw">→</span>
+  <b>out</b><span>1×3×512×512 float32, contiguous</span>
+  <span class="arw">·</span><b>file</b><span>trt_infer.py :: preprocess()</span>
+</div>
 
 <p>Four transforms, in a fixed order, forming the input contract. Any deviation
-produces confident nonsense rather than an error — the network accepts whatever
-shape it is given.</p>
+produces confident nonsense rather than an error — the network accepts whatever it
+is given.</p>
+
+<figure>
+<svg viewBox="0 0 760 250" role="img"
+     aria-label="Preprocessing: BGR to RGB channel swap, divide by 255, subtract mean and divide by standard deviation, transpose from HWC to CHW, then make contiguous before the GPU copy.">
+  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">
+    <defs>
+      <marker id="a4" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto">
+        <polygon points="0 0, 8 3.5, 0 7" fill="currentColor"/>
+      </marker>
+    </defs>
+    <g stroke="currentColor" stroke-width="1.4" opacity=".5" marker-end="url(#a4)">
+      <line x1="146" y1="70" x2="176" y2="70"/>
+      <line x1="284" y1="70" x2="314" y2="70"/>
+      <line x1="422" y1="70" x2="452" y2="70"/>
+      <line x1="560" y1="70" x2="590" y2="70"/>
+    </g>
+    <g fill="none" stroke="currentColor" stroke-width="1.3" opacity=".65">
+      <rect x="20"  y="44" width="126" height="52" rx="5"/>
+      <rect x="178" y="44" width="106" height="52" rx="5"/>
+      <rect x="316" y="44" width="106" height="52" rx="5"/>
+      <rect x="454" y="44" width="106" height="52" rx="5"/>
+    </g>
+    <rect x="592" y="44" width="148" height="52" rx="5" fill="none" class="ac" stroke-width="1.7"/>
+
+    <g text-anchor="middle">
+      <text x="83"  y="66" font-weight="600">BGR → RGB</text>
+      <text x="83"  y="82" class="mut">channel swap</text>
+      <text x="231" y="66" font-weight="600">÷ 255</text>
+      <text x="231" y="82" class="mut">to [0,1]</text>
+      <text x="369" y="66" font-weight="600">(x − μ) / σ</text>
+      <text x="369" y="82" class="mut">ImageNet stats</text>
+      <text x="507" y="66" font-weight="600">HWC → CHW</text>
+      <text x="507" y="82" class="mut">+ batch axis</text>
+      <text x="666" y="66" font-weight="600" class="acf">ascontiguousarray</text>
+      <text x="666" y="82" class="mut">re-lays out memory</text>
+    </g>
+
+    <!-- memory layout explanation -->
+    <text x="20" y="136" font-weight="600" font-size="12">Why the last box is not cosmetic</text>
+    <g>
+      <text x="20" y="160" class="mut">after transpose — a view, memory unchanged:</text>
+      <g font-family="ui-monospace,Menlo,Consolas,monospace" font-size="11">
+        <rect x="20" y="170" width="300" height="24" rx="3" fill="none" stroke="currentColor"
+              stroke-width="1.1" opacity=".5"/>
+        <text x="30" y="187" class="mut">R G B R G B R G B …  (interleaved)</text>
+      </g>
+      <text x="340" y="160" class="acf">after ascontiguousarray:</text>
+      <g font-family="ui-monospace,Menlo,Consolas,monospace" font-size="11">
+        <rect x="340" y="170" width="300" height="24" rx="3" fill="none" class="ac" stroke-width="1.3"/>
+        <text x="350" y="187" class="acf">R R R … G G G … B B B …  (planar)</text>
+      </g>
+    </g>
+    <text x="20" y="220" class="mut">memcpy_htod copies raw bytes and knows nothing about strides. Skip the
+      re-layout and the GPU</text>
+    <text x="20" y="236" class="mut">receives correctly-sized, incorrectly-ordered data — and TensorRT infers on
+      it without complaint.</text>
+  </g>
+</svg>
+<figcaption><code>transpose</code> returns a view with permuted strides; the bytes
+in memory do not move. The copy to the GPU is byte-wise, so the re-layout has to
+happen first.</figcaption>
+</figure>
 
 <pre><code><span class="cm"># trt_infer.py</span>
 MEAN = np.array([0.485, 0.456, 0.406], np.float32)
@@ -563,39 +941,34 @@ STD  = np.array([0.229, 0.224, 0.225], np.float32)
     <span class="kw">return</span> np.ascontiguousarray(x.transpose(2, 0, 1)[<span class="kw">None</span>])</code></pre>
 
 <table>
-<thead><tr><th>Step</th><th>Operation</th><th>Failure if omitted</th></tr></thead>
+<thead><tr><th>Step</th><th>Failure if omitted</th></tr></thead>
 <tbody>
-<tr><td>Channel order</td><td><code>cv2.COLOR_BGR2RGB</code></td>
-<td>R and B swap. The encoder's colour statistics invert; output is plausible-looking
-garbage. Classic symptom: the whole frame lights up.</td></tr>
-<tr><td>Scale</td><td><code>/ 255.0</code></td><td>Inputs 255× too large; saturates
-activations.</td></tr>
-<tr><td>Standardise</td><td><code>(x − μ) / σ</code>, ImageNet statistics</td>
-<td>The encoder is <code>timm-mobilenetv3_large_100</code>, pretrained on ImageNet.
-Its learned filters expect that distribution.</td></tr>
-<tr><td>Layout</td><td>HWC → CHW, add batch axis</td><td>Shape mismatch, or a silently
-misread tensor.</td></tr>
+<tr><td>Channel order</td><td>R and B swap. The encoder's colour statistics invert;
+output is plausible-looking garbage. Classic symptom: the whole frame lights up.</td></tr>
+<tr><td>Scale</td><td>Inputs 255× too large; saturates activations.</td></tr>
+<tr><td>Standardise</td><td>The encoder is <code>timm-mobilenetv3_large_100</code>,
+pretrained on ImageNet. Its learned filters expect that distribution.</td></tr>
+<tr><td>Layout / contiguity</td><td>Shape mismatch, or a silently misread tensor.</td></tr>
 </tbody>
 </table>
-
-<p><code>np.ascontiguousarray</code> is not cosmetic. <code>transpose</code> returns a
-view with permuted strides; the memory order is unchanged. The subsequent
-<code>memcpy_htod</code> copies raw bytes to the GPU with no knowledge of strides,
-so a non-contiguous array would transfer correctly-sized, incorrectly-ordered data
-— and TensorRT would happily infer on it.</p>
 
 <h3>An equivalence worth knowing</h3>
 <p>Thresholding the sigmoid at 0.55 is identical to thresholding the raw logit:</p>
 <p class="num">logit(0.55) = ln(0.55 / 0.45) = 0.2007</p>
 <p>Measured, the numpy sigmoid over 512×512 costs 2.46 ms; the logit comparison
 costs 0.07 ms. Since only the mask is used downstream — never the probability
-values themselves — this is a free 2.4 ms. Currently unapplied: the loop is
-camera-bound, so it would not raise frame rate.</p>
+values — this is a free 2.4 ms. Currently unapplied: the loop is camera-bound, so
+it would not raise frame rate.</p>
 </section>
 
 <!-- ===================== STAGE 5 ===================== -->
 <section id="s5">
 <h2>5 · The model boundary</h2>
+<div class="io">
+  <b>in</b><span>1×3×512×512 float32</span><span class="arw">→</span>
+  <b>out</b><span>1×1×512×512 logits</span>
+  <span class="arw">·</span><b>file</b><span>trt_infer.py :: infer()</span>
+</div>
 <p>Documented as an interface only.</p>
 <table>
 <thead><tr><th></th><th>Contract</th></tr></thead>
@@ -611,8 +984,8 @@ camera-bound, so it would not raise frame rate.</p>
 <span class="lbl">The model cannot abstain</span>
 <p>It is a single-channel sigmoid with no "none of the above" output, trained on a
 dataset where <em>every image contains a crack</em>. Its effective prior is
-<em>there is a crack here, find it</em>. Shown a person it does not report absence
-— it partitions the frame into more- and less-crack-like regions and commits.</p>
+<em>there is a crack here, find it</em>. Shown a person it does not report absence —
+it partitions the frame into more- and less-crack-like regions and commits.</p>
 <p>Measured: <strong>19 % coverage</strong> on an indoor scene, against the
 <strong>6.3 %</strong> that is crack in an average CRACK500 mask. The false positive
 was three times denser than a real crack. No threshold fixes a missing capability.</p>
@@ -622,45 +995,134 @@ was three times denser than a real crack. No threshold fixes a missing capabilit
 <h3>Quantisation is not the problem</h3>
 <p>FP16 is 2.1× faster than FP32 (8.77 ms vs 18.44 ms GPU compute). The parity
 check bounds the cost: <strong>0.0552 %</strong> of mask pixels disagree with ONNX
-Runtime, against a 0.1 % acceptance bar, with 38 % of pixels above threshold —
-so the test exercised the model rather than passing vacuously.</p>
+Runtime, against a 0.1 % acceptance bar, with 38 % of pixels above threshold — so
+the test exercised the model rather than passing vacuously.</p>
 </section>
 
 <!-- ===================== STAGE 6 ===================== -->
 <section id="s6">
 <h2>6 · Mask geometry</h2>
+<div class="io">
+  <b>in</b><span>512×512 binary mask</span><span class="arw">→</span>
+  <b>out</b><span>filtered mask</span>
+  <span class="arw">·</span><b>file</b><span>live.py :: clean_mask()</span>
+</div>
 
 <h3>Area is not enough</h3>
 <p>The original filter dropped components below <code>min_area</code>. That removes
 specks but cannot distinguish <em>one large crack</em> from <em>one large blob</em> —
 they have the same area. The distinguishing property is not size but
-<strong>shape</strong>: cracks are thin, elongated, branching filaments; out-of-domain
-false positives are fat compact regions.</p>
+<strong>shape</strong>.</p>
 
-<h3>Two measures</h3>
-<h4>Mean half-width = area / perimeter</h4>
-<p>For a stroke of width <em>w</em> and length <em>L</em>: area ≈ <em>wL</em>,
-perimeter ≈ 2<em>L</em>. So area/perimeter ≈ <em>w</em>/2 — a direct read of
-thickness in pixels, independent of length, orientation and curvature.</p>
+<figure>
+<svg viewBox="0 0 760 290" role="img"
+     aria-label="A crack filament and a blob of equal area. The filament has a long perimeter giving small area-over-perimeter, and a convex hull far larger than itself giving low solidity. The blob has the opposite of both.">
+  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">
+    <!-- filament -->
+    <text x="40" y="20" font-weight="600" font-size="12" class="gdf">Crack filament</text>
+    <rect x="40" y="34" width="290" height="176" fill="none" class="gr" stroke-width="1"/>
+    <!-- convex hull -->
+    <polygon points="72,182 96,60 218,50 300,110 262,192"
+             fill="none" class="gd" stroke-width="1.3" stroke-dasharray="5 4" opacity=".75"/>
+    <!-- the filament itself -->
+    <polyline points="78,178 110,120 150,150 186,72 232,104 258,64 292,112"
+              fill="none" class="gd" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+    <polyline points="186,72 214,140 248,176" fill="none" class="gd"
+              stroke-width="4" stroke-linecap="round"/>
+    <text x="96" y="204" class="mut">dashed = convex hull</text>
 
-<h4>Solidity = area / convex-hull area</h4>
-<p>A meandering filament's convex hull is far larger than the filament, giving low
-solidity. A blob fills most of its hull, giving solidity near 1. Applied only to
-large components, because a short stubby but genuine crack can legitimately be
-solid.</p>
+    <text x="40" y="236" class="gdf">area / perimeter = <tspan font-weight="700">1.94 px</tspan>  (thin)</text>
+    <text x="40" y="256" class="gdf">solidity = <tspan font-weight="700">0.041</tspan>  (fills almost none of its hull)</text>
+    <text x="40" y="276" class="mut">long perimeter, sprawling hull</text>
+
+    <!-- blob -->
+    <text x="430" y="20" font-weight="600" font-size="12" class="bdf">False-positive blob</text>
+    <rect x="430" y="34" width="290" height="176" fill="none" class="gr" stroke-width="1"/>
+    <!-- hull, hugging the blob -->
+    <polygon points="486,80 600,52 686,102 664,180 520,186"
+             fill="none" class="bd" stroke-width="1.3" stroke-dasharray="5 4" opacity=".75"/>
+    <path d="M492,86 C540,46 630,52 682,104 C700,150 650,186 560,184 C498,182 476,132 492,86 Z"
+          class="bdf" opacity=".22"/>
+    <path d="M492,86 C540,46 630,52 682,104 C700,150 650,186 560,184 C498,182 476,132 492,86 Z"
+          fill="none" class="bd" stroke-width="1.8"/>
+    <text x="486" y="204" class="mut">hull hugs the shape</text>
+
+    <text x="430" y="236" class="bdf">area / perimeter = <tspan font-weight="700">11.2 px</tspan>  (median, fat)</text>
+    <text x="430" y="256" class="bdf">solidity = <tspan font-weight="700">0.715</tspan>  (median, nearly fills hull)</text>
+    <text x="430" y="276" class="mut">short perimeter for its area</text>
+  </g>
+</svg>
+<figcaption>Two shapes can have identical area and be completely different objects.
+For a stroke of width <em>w</em> and length <em>L</em>: area ≈ <em>wL</em>,
+perimeter ≈ 2<em>L</em>, so area/perimeter ≈ <em>w</em>/2 — a direct read of
+thickness, independent of length, orientation and curvature.</figcaption>
+</figure>
 
 <h3>Measured separation</h3>
-<table>
-<thead><tr><th>Population</th><th>Mean half-width</th><th>Solidity</th><th>Outcome</th></tr></thead>
-<tbody>
-<tr><td>Synthetic thin crack (control)</td><td class="num">1.94 px</td>
-<td class="num">0.041</td><td>kept</td></tr>
-<tr><td>Real false blobs (51 components)</td><td class="num">median 11.2, max 43</td>
-<td class="num">median 0.715, max 1.09</td><td>rejected</td></tr>
-</tbody>
-</table>
-<p>Effect: <strong>96.2 %</strong> of false-positive coverage removed, 38 % → 1.44 %,
-with the synthetic filament fully intact.</p>
+<p>The thresholds are not guesses. These are the measured ranges over 51
+components, against a synthetic thin-crack control run through the same code:</p>
+
+<figure>
+<svg viewBox="0 0 760 300" role="img"
+     aria-label="Half-width: false blobs span 3.0 to 43.0 with median 11.2, the synthetic crack sits at 1.94, and the threshold is 12. Solidity: false blobs span 0.634 to 1.091 with median 0.715, the crack sits at 0.041, threshold 0.80.">
+  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">
+    <!-- ============ half-width axis ============ -->
+    <text x="30" y="22" font-weight="600" font-size="12">Mean half-width  (area / perimeter, px)</text>
+    <line x1="60" y1="92" x2="710" y2="92" stroke="currentColor" stroke-width="1" opacity=".5"/>
+    <g class="mut" font-size="10" text-anchor="middle">
+      <text x="60"  y="108">0</text>
+      <text x="205" y="108">10</text>
+      <text x="350" y="108">20</text>
+      <text x="495" y="108">30</text>
+      <text x="640" y="108">40</text>
+    </g>
+    <!-- blob range 3.0 - 43.0  (x = 60 + v*14.5) -->
+    <rect x="103" y="56" width="521" height="20" rx="3" class="bdf" opacity=".22"/>
+    <line x1="103" y1="52" x2="103" y2="80" class="bd" stroke-width="1.6"/>
+    <line x1="624" y1="52" x2="624" y2="80" class="bd" stroke-width="1.6"/>
+    <line x1="223" y1="48" x2="223" y2="84" class="bd" stroke-width="2.6"/>
+    <text x="232" y="44" class="bdf" font-size="10.5">median 11.2</text>
+    <text x="640" y="70" class="bdf" font-size="10.5">51 false blobs</text>
+    <!-- crack point 1.94 -->
+    <circle cx="88" cy="66" r="5.5" class="gdf"/>
+    <text x="88" y="132" text-anchor="middle" class="gdf" font-size="10.5">crack</text>
+    <text x="88" y="145" text-anchor="middle" class="gdf" font-size="10.5">1.94</text>
+    <!-- threshold 12 -->
+    <line x1="234" y1="36" x2="234" y2="96" class="ac" stroke-width="1.8" stroke-dasharray="5 3"/>
+    <text x="242" y="128" class="acf" font-size="10.5">threshold 12 — keep to the left</text>
+
+    <!-- ============ solidity axis ============ -->
+    <text x="30" y="192" font-weight="600" font-size="12">Solidity  (area / convex-hull area)</text>
+    <line x1="60" y1="252" x2="710" y2="252" stroke="currentColor" stroke-width="1" opacity=".5"/>
+    <g class="mut" font-size="10" text-anchor="middle">
+      <text x="60"  y="268">0</text>
+      <text x="228" y="268">0.3</text>
+      <text x="396" y="268">0.6</text>
+      <text x="508" y="268">0.8</text>
+      <text x="620" y="268">1.0</text>
+    </g>
+    <!-- blob range 0.634 - 1.091 (x = 60 + v*560) -->
+    <rect x="415" y="216" width="256" height="20" rx="3" class="bdf" opacity=".22"/>
+    <line x1="415" y1="212" x2="415" y2="240" class="bd" stroke-width="1.6"/>
+    <line x1="671" y1="212" x2="671" y2="240" class="bd" stroke-width="1.6"/>
+    <line x1="460" y1="208" x2="460" y2="244" class="bd" stroke-width="2.6"/>
+    <text x="400" y="204" text-anchor="end" class="bdf" font-size="10.5">median 0.715</text>
+    <!-- crack 0.041 -->
+    <circle cx="83" cy="226" r="5.5" class="gdf"/>
+    <text x="83" y="292" text-anchor="middle" class="gdf" font-size="10.5">crack 0.041</text>
+    <!-- threshold 0.80 -->
+    <line x1="508" y1="196" x2="508" y2="256" class="ac" stroke-width="1.8" stroke-dasharray="5 3"/>
+    <text x="516" y="288" class="acf" font-size="10.5">threshold 0.80</text>
+  </g>
+</svg>
+<figcaption>Note what this diagram admits: the blob range <em>starts</em> at
+half-width 3.0, below the threshold of 12, so some false blobs legitimately pass
+the thinness test. That is consistent with the 1.44 % residual coverage after
+filtering — the filter is good, not perfect.</figcaption>
+</figure>
+
+<p>Effect overall: <strong>96.2 %</strong> of false-positive coverage removed,
+38 % → 1.44 %, with the synthetic filament fully intact.</p>
 
 <pre><code><span class="cm"># live.py — clean_mask()</span>
 n, lab, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
@@ -690,23 +1152,28 @@ same contour is fine; perimeter is well-defined for a degenerate polygon.</p>
 
 <h3>Threshold selection, and a near-miss</h3>
 <p>The false blobs cluster at half-width 11, so 8 px looks like an obvious
-threshold. It is wrong. CRACK500 masks average 6.3 % of a 512² frame; if that is
-one filament, the implied width is around 25 px — half-width ≈ 12. Setting 8
-would have silently discarded wide cracks, with no error and no symptom except
-lower recall on exactly the defects that matter most.</p>
-<p>Kept at <strong>12</strong>, favouring recall. Documented as a floor. There are no
-in-domain crack images on the device to validate a tighter value against, and a
-parameter that cannot be validated should not be tightened.</p>
+threshold. It is wrong. CRACK500 masks average 6.3 % of a 512² frame; if that is one
+filament, the implied width is around 25 px — half-width ≈ 12. Setting 8 would have
+silently discarded wide cracks, with no error and no symptom except lower recall on
+exactly the defects that matter most.</p>
+<p>Kept at <strong>12</strong>, favouring recall, and documented as a floor. There
+are no in-domain crack images on the device to validate a tighter value against, and
+a parameter that cannot be validated should not be tightened.</p>
 <p><code>CHAIN_APPROX_NONE</code> rather than <code>SIMPLE</code>: the latter collapses
-straight runs to endpoints, which changes the computed perimeter and therefore the
+straight runs to endpoints, changing the computed perimeter and therefore the
 half-width. The filter measures geometry, so it needs every boundary point.</p>
 </section>
 
 <!-- ===================== STAGE 7 ===================== -->
 <section id="s7">
 <h2>7 · Temporal integration</h2>
+<div class="io">
+  <b>in</b><span>per-frame coverage</span><span class="arw">→</span>
+  <b>out</b><span>CRACK / clear</span>
+  <span class="arw">·</span><b>file</b><span>live.py, serve.py :: main loop</span>
+</div>
 
-<p>Per-frame decisions flicker. Sensor noise, autofocus micro-adjustments and hand
+<p>Per-frame decisions flicker. Sensor noise, focus micro-adjustments and hand
 movement all push borderline pixels across the threshold between consecutive
 frames. A detector that alternates CRACK/clear at 15 Hz is unusable regardless of
 per-frame accuracy.</p>
@@ -716,30 +1183,72 @@ smooth   = 0.7 * smooth + 0.3 * frac         <span class="cm"># exponential movi
 is_crack = smooth &gt; args.alert_frac</code></pre>
 
 <p>An EMA with α = 0.3 has an effective memory of roughly 1/α ≈ 3 frames — at
-15 fps, about 200 ms. Long enough to suppress single-frame noise, short enough
-that the display tracks camera motion. It also costs one float of state, which
-matters in a loop already spending 18.4 ms per frame.</p>
+15 fps, about 200 ms. Long enough to suppress single-frame noise, short enough that
+the display tracks camera motion.</p>
 
 <h3>Setting the alert fraction</h3>
-<table>
-<thead><tr><th>Quantity</th><th>Coverage</th><th>Source</th></tr></thead>
-<tbody>
-<tr><td>Clean-surface speck (median false blob, 165 px)</td><td class="num">≈ 0.06 %</td>
-<td>METU negatives, 20 000 images</td></tr>
-<tr><td><code>setup.md</code> default</td><td class="num">0.2 %</td><td>fires ~3× above speck level</td></tr>
-<tr><td><strong>Current default</strong></td><td class="num">1.0 %</td><td>this project</td></tr>
-<tr><td>Average real crack</td><td class="num">6.3 %</td><td>CRACK500 masks</td></tr>
-</tbody>
-</table>
-<p>The guide's 0.2 % sits uncomfortably close to the noise floor. 1 % is an order
-of magnitude above the speck level and still well below a real crack, leaving
-headroom for small ones. This is the single most deployment-dependent parameter
-in the system.</p>
+<p>Every quantity that matters sits on one axis, which is the clearest way to see
+how much headroom the threshold actually has:</p>
+
+<figure>
+<svg viewBox="0 0 760 180" role="img"
+     aria-label="Logarithmic coverage scale. Clean-surface specks sit at 0.06 percent, the guide default at 0.2, the current alert threshold at 1.0, an average real crack at 6.3, and the observed unfiltered false positive at 19 percent.">
+  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">
+    <line x1="60" y1="96" x2="730" y2="96" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
+    <g class="mut" font-size="10" text-anchor="middle">
+      <text x="60"  y="120">0.01%</text>
+      <text x="254" y="120">0.1%</text>
+      <text x="448" y="120">1%</text>
+      <text x="642" y="120">10%</text>
+    </g>
+
+    <!-- speck 0.06 -->
+    <line x1="211" y1="86" x2="211" y2="106" stroke="currentColor" stroke-width="1.6" opacity=".7"/>
+    <text x="211" y="76" text-anchor="middle">0.06%</text>
+    <text x="211" y="62" text-anchor="middle" class="mut">clean-surface speck</text>
+    <text x="211" y="48" text-anchor="middle" class="mut">(METU, 20 000 images)</text>
+
+    <!-- guide 0.2 -->
+    <line x1="312" y1="86" x2="312" y2="106" class="bd" stroke-width="1.8"/>
+    <text x="312" y="140" text-anchor="middle" class="bdf">0.2%</text>
+    <text x="312" y="154" text-anchor="middle" class="mut">setup.md default —</text>
+    <text x="312" y="167" text-anchor="middle" class="mut">too close to the noise floor</text>
+
+    <!-- current 1.0 -->
+    <line x1="448" y1="80" x2="448" y2="112" class="ac" stroke-width="2.6"/>
+    <text x="448" y="70" text-anchor="middle" class="acf" font-weight="700">1.0%</text>
+    <text x="448" y="56" text-anchor="middle" class="acf">current alert-frac</text>
+
+    <!-- real crack 6.3 -->
+    <line x1="603" y1="86" x2="603" y2="106" class="gd" stroke-width="2.2"/>
+    <text x="603" y="140" text-anchor="middle" class="gdf">6.3%</text>
+    <text x="603" y="154" text-anchor="middle" class="mut">average real crack</text>
+    <text x="603" y="167" text-anchor="middle" class="mut">(CRACK500 masks)</text>
+
+    <!-- false positive 19 -->
+    <line x1="696" y1="86" x2="696" y2="106" class="bd" stroke-width="1.8"/>
+    <text x="696" y="76" text-anchor="middle" class="bdf">19%</text>
+    <text x="696" y="62" text-anchor="middle" class="mut">person, unfiltered</text>
+
+    <!-- headroom bracket -->
+    <line x1="211" y1="104" x2="448" y2="104" class="ac" stroke-width="1" opacity=".5"/>
+    <text x="330" y="100" text-anchor="middle" class="acf" font-size="10">≈ 1.2 decades of headroom</text>
+  </g>
+</svg>
+<figcaption>Logarithmic scale. The guide's 0.2 % sits barely above the noise floor;
+1 % is an order of magnitude above the speck level and still well below a real
+crack. This is the most deployment-dependent parameter in the system.</figcaption>
+</figure>
 </section>
 
 <!-- ===================== STAGE 8 ===================== -->
 <section id="s8">
 <h2>8 · Rendering and transport</h2>
+<div class="io">
+  <b>in</b><span>crop + mask + status</span><span class="arw">→</span>
+  <b>out</b><span>MJPEG over HTTP</span>
+  <span class="arw">·</span><b>file</b><span>serve.py :: Pipeline, Handler</span>
+</div>
 
 <h3>Mask upsampling: nearest, not linear</h3>
 <pre><code>big = cv2.resize(mask, (crop.shape[1], crop.shape[0]),
@@ -753,17 +1262,77 @@ along every edge, so the displayed boundary would no longer be the boundary the
 decision was made on. <code>INTER_NEAREST</code> keeps the overlay an honest
 rendering of the actual mask.</p>
 <p>The 0.4/0.6 alpha blend keeps surface texture visible <em>through</em> the
-highlight, so an operator can judge whether the detection sits on a real feature.
-A solid fill would hide the evidence. The yellow contour is drawn separately
-because a blend alone makes it hard to see where a detection ends.</p>
-<p>Note the BGR ordering — <code>[0,0,255]</code> is red and
-<code>(0,255,255)</code> is yellow, because OpenCV draws in BGR.</p>
+highlight, so an operator can judge whether a detection sits on a real feature. A
+solid fill would hide the evidence. Note the BGR ordering —
+<code>[0,0,255]</code> is red and <code>(0,255,255)</code> is yellow, because
+OpenCV draws in BGR.</p>
 
 <h3>Decoupling observation from measurement</h3>
-<p>A naïve server would run inference inside the HTTP handler: two viewers would
-double the load and halve the frame rate, so the act of watching would change what
-is measured. Instead one producer thread owns the camera and publishes the latest
-encoded JPEG; handlers only read it.</p>
+<p>A naïve server would run inference inside the HTTP handler. Two viewers would
+then double the load and halve the frame rate — the act of watching would change
+what is measured.</p>
+
+<figure>
+<svg viewBox="0 0 760 280" role="img"
+     aria-label="One producer thread owns the camera and writes the latest JPEG and sequence number under a lock. Three viewer handlers only read it and wait on the condition variable, so adding viewers costs socket writes but no extra inference.">
+  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="11">
+    <defs>
+      <marker id="a8" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto">
+        <polygon points="0 0, 8 3.5, 0 7" fill="currentColor"/>
+      </marker>
+    </defs>
+
+    <!-- producer chain -->
+    <rect x="24" y="52" width="86" height="44" rx="5" fill="none" stroke="currentColor"
+          stroke-width="1.3" opacity=".65"/>
+    <text x="67" y="72" text-anchor="middle" font-weight="600">camera</text>
+    <text x="67" y="87" text-anchor="middle" class="mut">/dev/video0</text>
+
+    <rect x="140" y="52" width="130" height="44" rx="5" fill="none" class="ac" stroke-width="1.7"/>
+    <text x="205" y="72" text-anchor="middle" font-weight="600" class="acf">producer thread</text>
+    <text x="205" y="87" text-anchor="middle" class="mut">infer · filter · encode</text>
+
+    <rect x="300" y="44" width="150" height="60" rx="5" fill="none" stroke="currentColor"
+          stroke-width="1.6"/>
+    <text x="375" y="66" text-anchor="middle" font-weight="600">shared state</text>
+    <text x="375" y="82" text-anchor="middle" class="mut" font-family="ui-monospace,monospace">jpeg, seq, status</text>
+    <text x="375" y="96" text-anchor="middle" class="mut">under one lock</text>
+
+    <g stroke="currentColor" stroke-width="1.5" opacity=".6" marker-end="url(#a8)">
+      <line x1="112" y1="74" x2="136" y2="74"/>
+      <line x1="272" y1="74" x2="296" y2="74"/>
+    </g>
+    <text x="205" y="40" text-anchor="middle" class="acf">writes · notify_all()</text>
+
+    <!-- viewers -->
+    <g fill="none" stroke="currentColor" stroke-width="1.3" opacity=".65">
+      <rect x="560" y="16" width="170" height="38" rx="5"/>
+      <rect x="560" y="66" width="170" height="38" rx="5"/>
+      <rect x="560" y="116" width="170" height="38" rx="5"/>
+    </g>
+    <g text-anchor="middle">
+      <text x="645" y="40">viewer A  ·  waits on seq</text>
+      <text x="645" y="90">viewer B  ·  waits on seq</text>
+      <text x="645" y="140">viewer C  ·  waits on seq</text>
+    </g>
+    <g stroke="currentColor" stroke-width="1.4" opacity=".5" marker-end="url(#a8)">
+      <path d="M452,66 C500,66 510,35 556,35" fill="none"/>
+      <path d="M452,78 C500,78 510,85 556,85" fill="none"/>
+      <path d="M452,90 C500,90 510,135 556,135" fill="none"/>
+    </g>
+    <text x="505" y="170" text-anchor="middle" class="mut">read only</text>
+
+    <!-- the claim -->
+    <text x="24" y="206" font-weight="600" font-size="12">Cost of one more viewer</text>
+    <text x="24" y="228" class="gdf">+ one socket write</text>
+    <text x="24" y="246" class="gdf">+ zero inference — the measurement is unchanged</text>
+    <text x="24" y="268" class="mut">The sequence number is what lets each viewer block until a frame
+      it has not yet sent exists, instead of polling or resending.</text>
+  </g>
+</svg>
+<figcaption>One producer owns the camera; handlers only read. This is what keeps
+the observed system identical to the unobserved one.</figcaption>
+</figure>
 
 <pre><code><span class="kw">with</span> self.lock:
     self.jpeg   = buf.tobytes()
@@ -778,17 +1347,13 @@ encoded JPEG; handlers only read it.</p>
             self.lock.wait(timeout)
         <span class="kw">return</span> self.jpeg, self.seq</code></pre>
 
-<p>The sequence number makes each viewer wait for a frame it has not sent, rather
-than polling or re-sending the same one. <em>N</em> viewers cost <em>N</em> socket
-writes and zero extra inference.</p>
-
 <div class="box">
 <span class="lbl">CUDA contexts are thread-affine</span>
 <p><code>pycuda.autoinit</code> creates the context on the importing thread. A CUDA
 context belongs to one thread at a time, so the producer thread must
 <code>push()</code> it before touching TensorRT — otherwise every call fails with
-<em>invalid device context</em>. This is a genuine constraint of the runtime, not a
-quirk of this design.</p>
+<em>invalid device context</em>. A genuine constraint of the runtime, not a quirk of
+this design.</p>
 </div>
 
 <h3>MJPEG over HTTP</h3>
@@ -888,9 +1453,9 @@ the meantime.</p></div>
 <div class="qa"><p class="q">Why a median and not a mean for exposure control?</p>
 <p>Robustness to outlier regions. A window occupying 5 % of the frame at 255 moves
 the mean substantially and the median almost not at all. Since the inspected
-surface fills most of the frame, the median tracks the thing we care about
-exposing correctly. The mean would let a bright background dictate the exposure
-of the surface.</p></div>
+surface fills most of the frame, the median tracks the thing we care about exposing
+correctly. The mean would let a bright background dictate the exposure of the
+surface.</p></div>
 
 <div class="qa"><p class="q">The blob thresholds came from 51 components on indoor
 scenes. Is that enough?</p>
@@ -902,11 +1467,11 @@ ground-truth masks; the analysis script exists so it can be re-run when they are
 available.</p></div>
 
 <div class="qa"><p class="q">Why centre-crop and discard two-thirds of the frame?</p>
-<p>Because anisotropic scaling corrupts crack width, which is the feature the
-shape filter measures, and the model never saw distorted geometry in training.
-Full coverage is available by tiling — two overlapping 720×720 tiles at 2×
-inference cost, affordable since the loop is camera-bound at ~22 fps rather than
-compute-bound at 18.4 ms.</p></div>
+<p>Because anisotropic scaling corrupts crack width, which is the feature the shape
+filter measures, and the model never saw distorted geometry in training. Full
+coverage is available by tiling — two overlapping 720×720 tiles at 2× inference
+cost, affordable since the loop is camera-bound at ~22 fps rather than compute-bound
+at 18.4 ms.</p></div>
 
 <div class="qa"><p class="q">Why is FP16 acceptable when it changes the output at all?</p>
 <p>Because the change was measured rather than assumed: 0.0552 % of mask pixels
@@ -915,28 +1480,28 @@ of pixels were above threshold. For a 2.1× speedup that is a good trade. The FP
 engine is retained specifically so the comparison can be repeated.</p></div>
 
 <div class="qa"><p class="q">What limits frame rate, and why not optimise it?</p>
-<p>The camera. Raw MJPG capture tops out at ~22 fps because JPEG decode runs on
-CPU; with inference the loop lands at 15–19 fps. Inference is 18.4 ms, of which
-2.46 ms is the numpy sigmoid that could be removed entirely by thresholding in
-logit space. That optimisation is deliberately not applied — it would not raise
-frame rate, because the bottleneck is elsewhere. Hardware JPEG decode (NVJPG) is
-the lever that would actually help.</p></div>
+<p>The camera. Raw MJPG capture tops out at ~22 fps because JPEG decode runs on CPU;
+with inference the loop lands at 15–19 fps. Inference is 18.4 ms, of which 2.46 ms
+is the numpy sigmoid that could be removed entirely by thresholding in logit space.
+That optimisation is deliberately not applied — it would not raise frame rate,
+because the bottleneck is elsewhere. Hardware JPEG decode (NVJPG) is the lever that
+would actually help.</p></div>
 
 <div class="qa"><p class="q">Why test the exposure loop in simulation rather than on
 the real camera?</p>
 <p>Because the real scene is not controllable. With someone moving in frame the
-median swings 19 ↔ 178 at fixed settings, so a live pass/fail measures the room.
-The simulation fixes the sensor response and reproduces the two behaviours that
-actually broke earlier versions — actuation lag and transient frames — giving a
+median swings 19 ↔ 178 at fixed settings, so a live pass/fail measures the room. The
+simulation fixes the sensor response and reproduces the two behaviours that actually
+broke earlier versions — actuation lag and transient frames — giving a
 deterministic, repeatable result. The on-camera test is retained as a smoke test.</p></div>
 
 <div class="qa"><p class="q">What would you do next, given more time?</p>
-<p>In order: (1) validate on real pavement, since every number here except the
-parity check was measured on out-of-domain indoor scenes; (2) add the surface gate,
-which is the only principled fix for non-pavement false positives; (3) hardware
-JPEG decode to lift the capture ceiling; (4) tile the full frame width. Re-exporting
-at 448 to match training resolution is listed in the guide but is the weakest of
-these — it saves 23 % of compute the system is not short of.</p></div>
+<p>In order: (1) validate on real pavement, since every number here except the parity
+check was measured on out-of-domain indoor scenes; (2) add the surface gate, which is
+the only principled fix for non-pavement false positives; (3) hardware JPEG decode to
+lift the capture ceiling; (4) tile the full frame width. Re-exporting at 448 to match
+training resolution is listed in the guide but is the weakest of these — it saves
+23 % of compute the system is not short of.</p></div>
 </section>
 
 </main>
