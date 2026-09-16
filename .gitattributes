@@ -1,0 +1,5 @@
+# These files are deployed to the Jetson (Linux). CRLF would break the shell
+# scripts outright (`bash: \r: command not found`), so keep LF everywhere.
+* text=auto eol=lf
+*.png binary
+*.npy binary
