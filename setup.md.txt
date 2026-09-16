@@ -1,0 +1,542 @@
+-# Deploying CrackNet on Jetson Orin Nano with a Logitech C920
+
+This guide takes the crack segmentation model you trained and exported in Colab (`Untitled0.ipynb` and `Untitled1.ipynb`) and runs it live on a **Jetson Orin Nano** with a **Logitech C920** webcam, using TensorRT for inference.
+
+---
+
+## 0. What the notebooks produced (analysis)
+
+### 0.1 Pipeline summary
+
+| Stage            | Notebook              | Result                                                                                                                                                                                                       |
+| ---------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Dataset          | `Untitled0` cells 1–2 | CRACK500 (segmentation) plus METU "Crack Images for Classification" (used only for negatives)                                                                                                                |
+| Leak-free splits | `Untitled0` cells 3–5 | The official CRACK500 splits leak 5 parent photos between train and test and 1 between val and test. The splits were rebuilt by parent photo (70/15/15), giving **2333 / 526 / 509** crops and zero overlap. |
+| Class balance    | `Untitled0` cell 6    | About **6.3 %** of pixels are crack (median 5 % per image) and there are no empty masks, so the imbalance is strong. That's why Dice + Focal loss was used.                                                  |
+| Augmentation     | `Untitled0` cell 8    | RandomResizedCrop 448, flips, rot90, brightness/contrast, noise, motion blur, JPEG. The motion blur and JPEG augmentations should help with webcam footage.                                                  |
+| Model            | `Untitled1` cell 2    | `smp.Unet`, encoder `timm-mobilenetv3_large_100`, decoder `(256,128,64,32,16)`, 1 output channel (logits)                                                                                                    |
+| Threshold        | `Untitled1`           | `BEST_T = 0.55` on the sigmoid probability, picked from the val sweep                                                                                                                                        |
+| Negative test    | `Untitled1` cell 3    | On 20 000 METU crack-free images, **10.85 %** had at least one pixel above 0.55. The median false blob is 165 px and the mean is 734 px (about 1.4 % of a 227×227 image).                                    |
+| ONNX export      | `Untitled1` cell 5    | `cracknet.onnx`, then simplified to `cracknet_sim.onnx` (25.5 MiB). The input is **fixed 1×3×512×512**, opset **18**, 12.2 GMACs. The largest output difference from PyTorch is 2.8e-4.                      |
+| ONNX parity      | `Untitled1` cell 7    | 50 val images: largest probability difference 2e-5, **0 mask pixels differ** at 0.55                                                                                                                         |
+
+### 0.2 Facts the deployment has to respect
+
+1. **Input contract:** `input` is float32 with shape `[1,3,512,512]`, in **RGB** order, scaled to `/255` and then ImageNet-normalized with `mean=(0.485,0.456,0.406)` and `std=(0.229,0.224,0.225)`. OpenCV delivers **BGR**, so you have to convert.
+2. **Output:** `logits` has shape `[1,1,512,512]`. Apply a sigmoid and then threshold at `0.55`.
+3. **Resolution mismatch:** the model was trained on 448×448 crops but exported at 512×512. The CNN is fully convolutional and the val parity check used 512, so this works. If you want to shave about 23 % off compute, re-export at 448 (see §3.3).
+4. **Opset 18:** TensorRT 10.x (JetPack 6.1/6.2) handles opset 18. TensorRT 8.6 (JetPack 6.0 DP/early) officially stops at opset 17, so either upgrade JetPack or re-export with `opset_version=17`.
+5. **False positives:** because about 11 % of clean surfaces produce some pixels, **filter out small blobs** (min-area filter, §7). Without it, a live feed will flicker with spurious detections.
+6. **Domain shift:** CRACK500 is pavement photographed from roughly 1 m. For best results, point the C920 at a similar surface from a similar distance, with no motion blur and even lighting.
+
+### 0.3 Notebook housekeeping (not blocking)
+
+- `Untitled1` cell 8 is an older, faster version of cell 3 that you interrupted. You can delete it. Cell 3's result (`metu_negative_pixels.npy`) is the valid one.
+- Cell 3 ran slowly (about 4.5 h) because it read 20 000 images from Google Drive one at a time. Copying to `/content` first would make it far faster. None of this affects deployment.
+
+---
+
+## 1. Files to bring to the Jetson
+
+From `MyDrive/crack_outputs/` download:
+
+| File                                   | Needed?  | Why                                                       |
+| -------------------------------------- | -------- | --------------------------------------------------------- |
+| `cracknet_sim.onnx`                    | **Yes**  | The model you'll convert to TensorRT                      |
+| `cracknet.onnx` + `cracknet.onnx.data` | Optional | Unsimplified backup. The two files must stay together.    |
+| `best.pt`                              | Optional | Only needed to re-export (for example at 448 or opset 17) |
+| `crack500_val.json` + a few val images | Optional | For the parity test in §5                                 |
+
+Check that `cracknet_sim.onnx` is self-contained (no external `.data` file). About 25 MB is expected:
+
+```bash
+python3 -c "import onnx; m=onnx.load('cracknet_sim.onnx'); print(m.graph.input[0], m.graph.output[0], m.opset_import)"
+```
+
+---
+
+## 2. Set up the Jetson Orin Nano
+
+### 2.1 Flash JetPack 6.x
+
+- Use **JetPack 6.2** (L4T r36.4.x). It includes Ubuntu 22.04, CUDA 12.6, cuDNN 9, **TensorRT 10.3**, and Python 3.10, and it enables the "MAXN SUPER" power mode on the Orin Nano dev kit.
+- Flash with NVIDIA SDK Manager from an x86 Ubuntu host, or write the SD card image from the JetPack page. Do the first boot with a monitor and keyboard attached.
+- On an older dev kit you may need a **firmware (QSPI) update** before JetPack 6 boots. NVIDIA's "Jetson Orin Nano Developer Kit Getting Started" guide covers this: flash JetPack 5.1.3 first, let it update the QSPI, then flash 6.x.
+
+Check the versions:
+
+```bash
+cat /etc/nv_tegra_release          # expect R36 (release), REVISION: 4.x
+dpkg -l | grep -E "nvinfer|tensorrt" | head
+python3 -c "import tensorrt as trt; print(trt.__version__)"   # expect 10.x
+```
+
+If `import tensorrt` fails, install the full JetPack stack:
+
+```bash
+sudo apt update
+sudo apt install -y nvidia-jetpack
+```
+
+### 2.2 Performance mode
+
+```bash
+sudo nvpmodel -q                 # show current mode
+sudo nvpmodel -m 0               # max-performance mode (MAXN / MAXN SUPER on JP6.2)
+sudo jetson_clocks               # lock clocks at max (repeat after each reboot)
+```
+
+Use a proper power supply (the barrel-jack PSU that ships with the dev kit) and keep the fan running.
+
+### 2.3 Monitoring (recommended)
+
+```bash
+sudo apt install -y python3-pip
+sudo pip3 install -U jetson-stats
+sudo reboot
+# after reboot:
+jtop
+```
+
+### 2.4 Swap (helps TensorRT builds on 8 GB)
+
+```bash
+sudo fallocate -l 8G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+### 2.5 Python packages
+
+```bash
+sudo apt install -y python3-pip python3-dev v4l-utils libv4l-dev \
+                    gstreamer1.0-tools gstreamer1.0-plugins-good
+export PATH=/usr/local/cuda/bin:$PATH             # needed so pycuda finds nvcc
+echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
+echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
+source ~/.bashrc
+
+pip3 install --upgrade pip
+pip3 install "numpy<2" pycuda onnx onnxruntime
+```
+
+Notes:
+
+- The TensorRT Python bindings on JetPack are compiled against **numpy 1.x**, so keep `numpy<2`.
+- Use the OpenCV that JetPack ships (`python3 -c "import cv2; print(cv2.__version__)"`). Don't `pip install opencv-python` on top of it, because that can replace the GStreamer-enabled build.
+- `onnxruntime` (CPU) is only used to check TensorRT against ONNX in §5.
+
+Project folder:
+
+```bash
+mkdir -p ~/cracknet && cd ~/cracknet
+# copy cracknet_sim.onnx here (scp, USB stick, etc.)
+# e.g. from your PC:  scp cracknet_sim.onnx <user>@<jetson-ip>:~/cracknet/
+```
+
+---
+
+## 3. Build the TensorRT engine
+
+### 3.1 FP16 engine (recommended)
+
+```bash
+cd ~/cracknet
+/usr/src/tensorrt/bin/trtexec \
+  --onnx=cracknet_sim.onnx \
+  --saveEngine=cracknet_fp16.engine \
+  --fp16 \
+  --memPoolSize=workspace:2048 \
+  --verbose 2>&1 | tee build_fp16.log
+```
+
+- The build takes several minutes. At the end, `trtexec` prints latency and throughput; write down the `GPU Compute Time` mean.
+- The engine is tied to **this device and this TensorRT version**. Rebuild it after any JetPack upgrade and never copy it between machines.
+- Expect roughly 15–30 ms per frame at 512×512 FP16 on an Orin Nano 8 GB (12 GMACs). Measure your own number rather than trusting this range.
+
+### 3.2 FP32 engine (reference, for the accuracy check)
+
+```bash
+/usr/src/tensorrt/bin/trtexec --onnx=cracknet_sim.onnx --saveEngine=cracknet_fp32.engine
+```
+
+### 3.3 Troubleshooting export problems
+
+If the parser fails on opset 18 ops (usually `Pad` or `Resize`, and mostly on TRT 8.6), re-export in Colab at opset 17. You can export at 448 at the same time to match the training size:
+
+```python
+import torch, segmentation_models_pytorch as smp
+model = smp.Unet("timm-mobilenetv3_large_100", encoder_weights=None,
+                 in_channels=3, classes=1, decoder_channels=(256,128,64,32,16))
+model.load_state_dict(torch.load(f'{OUT}/best.pt', map_location='cpu')); model.eval()
+SIZE = 448   # or 512
+torch.onnx.export(model, torch.randn(1,3,SIZE,SIZE), f'{OUT}/cracknet_{SIZE}_op17.onnx',
+                  input_names=["input"], output_names=["logits"],
+                  opset_version=17, dynamic_axes=None, dynamo=False)
+!python -m onnxsim {OUT}/cracknet_{SIZE}_op17.onnx {OUT}/cracknet_{SIZE}_op17_sim.onnx
+```
+
+If you use 448, set `SIZE = 448` in the scripts below. The scripts read the size from the engine, so this is automatic.
+
+---
+
+## 4. Set up the C920 webcam
+
+### 4.1 Detect it
+
+```bash
+lsusb | grep -i logitech            # 046d:082d HD Pro Webcam C920
+v4l2-ctl --list-devices             # usually /dev/video0
+v4l2-ctl -d /dev/video0 --list-formats-ext
+```
+
+The C920 offers:
+
+- **YUYV**, uncompressed. Limited to about 10 fps at 720p and 5 fps at 1080p over USB 2 bandwidth.
+- **MJPG**, compressed. Gives **30 fps** at 720p and 1080p. **Use MJPG.**
+
+Plug it into a USB-A port directly on the board, not a hub.
+
+### 4.2 Camera controls (important for crack inspection)
+
+The C920's autofocus hunts, and auto-exposure drifts on uniform grey surfaces. Both produce blur and flicker. Lock them down:
+
+```bash
+v4l2-ctl -d /dev/video0 --list-ctrls         # names differ slightly across kernels
+v4l2-ctl -d /dev/video0 -c focus_automatic_continuous=0   # older kernels: focus_auto=0
+v4l2-ctl -d /dev/video0 -c focus_absolute=30              # 0=infinity … 250=close; tune for your distance
+v4l2-ctl -d /dev/video0 -c auto_exposure=1                # 1 = manual (older: exposure_auto=1)
+v4l2-ctl -d /dev/video0 -c exposure_time_absolute=156     # lower = less motion blur; raise gain/light if dark
+v4l2-ctl -d /dev/video0 -c power_line_frequency=1         # 1 = 50 Hz (India/EU), 2 = 60 Hz
+```
+
+These settings reset when the camera is unplugged. Put them in a script (`camera_setup.sh`) and run it before inference.
+
+### 4.3 Test capture
+
+```bash
+gst-launch-1.0 v4l2src device=/dev/video0 ! image/jpeg,width=1280,height=720,framerate=30/1 \
+  ! jpegdec ! videoconvert ! autovideosink
+```
+
+The pipeline above uses a CPU decoder. On Orin Nano, `nvv4l2decoder mjpeg=1` or `nvjpegdec` can decode in hardware. The Orin Nano has **no NVENC** but does have an NVDEC/NVJPG decoder. Plain OpenCV V4L2 capture with MJPG (below) is simpler and fast enough for 720p30.
+
+---
+
+## 5. Check the TensorRT engine against ONNX
+
+Save as `~/cracknet/trt_infer.py`. The live app reuses this module.
+
+```python
+# trt_infer.py - minimal TensorRT 10 runner for CrackNet
+import numpy as np
+import tensorrt as trt
+import pycuda.driver as cuda
+import pycuda.autoinit  # noqa: F401  (creates CUDA context)
+
+MEAN = np.array([0.485, 0.456, 0.406], np.float32)
+STD = np.array([0.229, 0.224, 0.225], np.float32)
+
+
+class CrackNetTRT:
+    def __init__(self, engine_path):
+        logger = trt.Logger(trt.Logger.WARNING)
+        with open(engine_path, "rb") as f, trt.Runtime(logger) as rt:
+            self.engine = rt.deserialize_cuda_engine(f.read())
+        self.ctx = self.engine.create_execution_context()
+        self.stream = cuda.Stream()
+        self.bufs = {}
+        for i in range(self.engine.num_io_tensors):
+            name = self.engine.get_tensor_name(i)
+            shape = tuple(self.engine.get_tensor_shape(name))
+            dtype = trt.nptype(self.engine.get_tensor_dtype(name))
+            host = cuda.pagelocked_empty(trt.volume(shape), dtype)
+            dev = cuda.mem_alloc(host.nbytes)
+            self.ctx.set_tensor_address(name, int(dev))
+            is_input = self.engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT
+            self.bufs[name] = (host, dev, shape, is_input)
+        self.in_name = next(n for n, b in self.bufs.items() if b[3])
+        self.out_name = next(n for n, b in self.bufs.items() if not b[3])
+        self.size = self.bufs[self.in_name][2][-1]   # 512 (or 448)
+
+    @staticmethod
+    def preprocess(rgb):
+        """rgb: HxWx3 uint8 already resized to SIZE x SIZE -> 1x3xHxW float32."""
+        x = (rgb.astype(np.float32) / 255.0 - MEAN) / STD
+        return np.ascontiguousarray(x.transpose(2, 0, 1)[None])
+
+    def infer(self, x):
+        """x: 1x3xSxS float32 -> probability map SxS float32."""
+        h_in, d_in, _, _ = self.bufs[self.in_name]
+        h_out, d_out, oshape, _ = self.bufs[self.out_name]
+        np.copyto(h_in, x.ravel())
+        cuda.memcpy_htod_async(d_in, h_in, self.stream)
+        self.ctx.execute_async_v3(self.stream.handle)
+        cuda.memcpy_dtoh_async(h_out, d_out, self.stream)
+        self.stream.synchronize()
+        logits = h_out.reshape(oshape)[0, 0]
+        return 1.0 / (1.0 + np.exp(-logits))
+```
+
+Parity test `~/cracknet/check_parity.py`. Copy a few CRACK500 val `.jpg` files into `~/cracknet/val_samples/`:
+
+```python
+import glob, cv2, numpy as np, onnxruntime as ort
+from trt_infer import CrackNetTRT
+
+T = 0.55
+trt_net = CrackNetTRT("cracknet_fp16.engine")
+S = trt_net.size
+sess = ort.InferenceSession("cracknet_sim.onnx", providers=["CPUExecutionProvider"])
+
+maxdiff, dis, tot = 0.0, 0, 0
+for p in sorted(glob.glob("val_samples/*.jpg"))[:20]:
+    rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
+    rgb = cv2.resize(rgb, (S, S))
+    x = CrackNetTRT.preprocess(rgb)
+    a = 1 / (1 + np.exp(-sess.run(None, {"input": x})[0][0, 0]))
+    b = trt_net.infer(x)
+    maxdiff = max(maxdiff, float(np.abs(a - b).max()))
+    dis += int(((a > T) != (b > T)).sum()); tot += a.size
+
+print(f"max prob diff {maxdiff:.2e}   mask disagreement {dis}/{tot} = {dis/tot:.6f}")
+```
+
+```bash
+cd ~/cracknet && python3 check_parity.py
+```
+
+Pass criteria: FP16 mask disagreement **below about 0.1 %** of pixels. In Colab, ONNX Runtime agreed with PyTorch exactly (0 differing pixels). If FP16 misses the target, use the FP32 engine or build FP16 with `--precisionConstraints=obey --layerPrecisions=...` on the final layers.
+
+---
+
+## 6. Live inference with the C920
+
+Save as `~/cracknet/live.py`:
+
+```python
+#!/usr/bin/env python3
+"""Live crack segmentation: C920 -> TensorRT CrackNet -> overlay."""
+import argparse, time
+import cv2
+import numpy as np
+from trt_infer import CrackNetTRT
+
+
+def open_c920(dev=0, w=1280, h=720, fps=30):
+    cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))  # must come first
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+    cap.set(cv2.CAP_PROP_FPS, fps)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # always use the newest frame
+    if not cap.isOpened():
+        raise RuntimeError(f"cannot open /dev/video{dev}")
+    return cap
+
+
+def center_square(frame):
+    """Crop the central HxH square so the model sees undistorted geometry."""
+    h, w = frame.shape[:2]
+    s = min(h, w)
+    y0, x0 = (h - s) // 2, (w - s) // 2
+    return frame[y0:y0 + s, x0:x0 + s], (x0, y0, s)
+
+
+def clean_mask(mask, min_area):
+    """Drop connected components smaller than min_area (model-resolution px)."""
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    keep = np.zeros_like(mask)
+    for i in range(1, n):
+        if stats[i, cv2.CC_STAT_AREA] >= min_area:
+            keep[lab == i] = 255
+    return keep
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--engine", default="cracknet_fp16.engine")
+    ap.add_argument("--cam", type=int, default=0)
+    ap.add_argument("--thresh", type=float, default=0.55)
+    ap.add_argument("--min-area", type=int, default=300,
+                    help="px at model resolution; METU false blobs median ~165px")
+    ap.add_argument("--alert-frac", type=float, default=0.002,
+                    help="crack pixel fraction to flag a frame as CRACK")
+    ap.add_argument("--record", default="", help="optional output .mp4")
+    ap.add_argument("--headless", action="store_true")
+    args = ap.parse_args()
+
+    net = CrackNetTRT(args.engine)
+    S = net.size
+    cap = open_c920(args.cam)
+    ok, frame = cap.read()
+    if not ok:
+        raise RuntimeError("no frame from camera")
+    print("camera:", frame.shape, "model input:", S)
+
+    writer = None
+    if args.record:
+        crop, _ = center_square(frame)
+        writer = cv2.VideoWriter(args.record, cv2.VideoWriter_fourcc(*"mp4v"),
+                                 15, (crop.shape[1], crop.shape[0]))
+
+    t_prev, fps, smooth = time.time(), 0.0, 0.0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        crop, _ = center_square(frame)                    # 720x720 BGR
+        rgb = cv2.cvtColor(cv2.resize(crop, (S, S), interpolation=cv2.INTER_AREA),
+                           cv2.COLOR_BGR2RGB)
+
+        t0 = time.time()
+        prob = net.infer(CrackNetTRT.preprocess(rgb))     # SxS
+        t_inf = (time.time() - t0) * 1000
+
+        mask = (prob > args.thresh).astype(np.uint8) * 255
+        mask = clean_mask(mask, args.min_area)
+        frac = float((mask > 0).mean())
+        smooth = 0.7 * smooth + 0.3 * frac                # temporal smoothing
+        is_crack = smooth > args.alert_frac
+
+        # overlay at camera resolution
+        big = cv2.resize(mask, (crop.shape[1], crop.shape[0]),
+                         interpolation=cv2.INTER_NEAREST)
+        vis = crop.copy()
+        vis[big > 0] = (0.4 * vis[big > 0] + 0.6 * np.array([0, 0, 255])).astype(np.uint8)
+        contours, _ = cv2.findContours(big, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(vis, contours, -1, (0, 255, 255), 1)
+
+        now = time.time()
+        fps = 0.9 * fps + 0.1 * (1.0 / max(now - t_prev, 1e-6)); t_prev = now
+        label = f"{'CRACK' if is_crack else 'clear'}  cov={100*smooth:.2f}%  " \
+                f"inf={t_inf:.1f}ms  fps={fps:.1f}"
+        cv2.putText(vis, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+                    (0, 0, 255) if is_crack else (0, 200, 0), 2)
+
+        if writer:
+            writer.write(vis)
+        if args.headless:
+            print(label, end="\r")
+        else:
+            cv2.imshow("CrackNet", vis)
+            if cv2.waitKey(1) & 0xFF in (27, ord("q")):
+                break
+
+    cap.release()
+    if writer:
+        writer.release()
+    cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()
+```
+
+Run:
+
+```bash
+cd ~/cracknet
+bash camera_setup.sh                 # the v4l2-ctl commands from §4.2
+python3 live.py                      # window on the Jetson display; q / Esc quits
+python3 live.py --headless --record run1.mp4     # over SSH without a display
+```
+
+When you work over SSH with a display attached to the Jetson, run `export DISPLAY=:0` first so the window opens on the Jetson's monitor.
+
+### Why centre-crop instead of stretching?
+
+The C920 captures 16:9 frames and the model takes a 1:1 input. Squashing 1280×720 into 512×512 would make crack widths anisotropic, which the model never saw in training. Centre-cropping 720×720 and scaling down to 512 (×0.71) keeps the geometry intact. To cover the full width, split the frame into two overlapping 720×720 tiles, run each tile, and stitch the masks together. That costs twice the inference time.
+
+---
+
+## 7. Tuning on real footage
+
+1. **Threshold (`--thresh`)**: 0.55 was tuned on CRACK500 val. On webcam footage, sweep 0.45–0.75. Raise it if clean surfaces light up.
+2. **Min area (`--min-area`)**: METU false blobs had a **median of 165 px** at 227×227 input. At 512 input with 0.71 scaling, 200–500 px is a reasonable starting range. Lower it if the model misses thin hairline cracks.
+3. **Alert fraction (`--alert-frac`)**: this is the crack-pixel fraction, after smoothing, that flags a frame. CRACK500 masks are about 5 % crack on average. A value of 0.2 % triggers on small cracks.
+4. **Distance and lighting**: match the training data, which is pavement photographed from roughly waist height with even lighting. Shadows, joints, tar seams, and texture edges are the most common false positives.
+5. **Motion**: keep exposure short (§4.2). Motion-blur augmentation in training helps, but only up to a point.
+
+---
+
+## 8. Performance
+
+| Lever                             | Effect                                                                                                                                                                                                               |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nvpmodel -m 0` + `jetson_clocks` | Largest single gain. Always do this.                                                                                                                                                                                 |
+| FP16 engine                       | About 2× faster than FP32, with negligible accuracy loss (verified in §5)                                                                                                                                            |
+| Re-export at 448                  | About 23 % fewer FLOPs than 512, and matches the training size                                                                                                                                                       |
+| Threaded capture                  | Move `cap.read()` into a thread with a 1-slot queue so capture overlaps inference                                                                                                                                    |
+| GPU preprocessing                 | Do resize, normalize, and transpose on the GPU (CuPy or a CUDA kernel). The CPU numpy normalize costs a few ms.                                                                                                      |
+| INT8                              | `trtexec --int8 --calib=...` needs a calibration cache from about 500 CRACK500 train images. Gains around 1.5× over FP16. Re-run §5 afterwards and check recall, because thin cracks are the first thing INT8 loses. |
+
+Benchmark the engine alone:
+
+```bash
+/usr/src/tensorrt/bin/trtexec --loadEngine=cracknet_fp16.engine --iterations=500 --avgRuns=100
+```
+
+---
+
+## 9. Start on boot (optional)
+
+`/etc/systemd/system/cracknet.service`:
+
+```ini
+[Unit]
+Description=CrackNet live inference
+After=multi-user.target
+
+[Service]
+User=<your-user>
+WorkingDirectory=/home/<your-user>/cracknet
+ExecStartPre=/usr/bin/bash /home/<your-user>/cracknet/camera_setup.sh
+ExecStart=/usr/bin/python3 live.py --headless --record /home/<your-user>/cracknet/latest.mp4
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now cracknet
+journalctl -u cracknet -f
+```
+
+Also add `sudo jetson_clocks` to a root service or `rc.local` if you need maximum clocks at boot.
+
+---
+
+## 10. Troubleshooting
+
+| Symptom                                                  | Cause / fix                                                                                                                                                           |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `import tensorrt` fails                                  | `sudo apt install nvidia-jetpack`. Use the system `python3`, not a conda or venv that can't see system packages. For a venv, create it with `--system-site-packages`. |
+| numpy ABI error on `import tensorrt`                     | `pip3 install "numpy<2"`                                                                                                                                              |
+| `pycuda` build fails with `nvcc not found`               | `export PATH=/usr/local/cuda/bin:$PATH` before `pip3 install pycuda`                                                                                                  |
+| trtexec: `Unsupported ONNX opset` / Pad or Resize errors | TRT is older than 10. Re-export with opset 17 (§3.3) or upgrade to JetPack 6.1+                                                                                       |
+| `Serialization ... version mismatch` loading engine      | The engine was built on a different TRT or device. Rebuild it on this Jetson.                                                                                         |
+| Camera only gives ~10 fps                                | You're getting YUYV. The MJPG FOURCC must be set **before** width and height. Check with `v4l2-ctl --list-formats-ext`.                                               |
+| `cannot open /dev/video0`                                | `ls /dev/video*`. Add your user to the video group (`sudo usermod -aG video $USER`, then log out and back in). Try `--cam 1`.                                         |
+| Blurry frames                                            | Disable autofocus, set `focus_absolute` (§4.2), and shorten exposure                                                                                                  |
+| Whole frame lights up                                    | Wrong colour order or normalization. Frames must be **BGR to RGB**, `/255`, ImageNet mean/std. Rerun §5.                                                              |
+| Many small false blobs                                   | Raise `--min-area` and/or `--thresh` (§7)                                                                                                                             |
+| `cv2.imshow` crashes over SSH                            | Use `--headless`, or `export DISPLAY=:0` with a monitor attached                                                                                                      |
+| Out of memory during trtexec                             | Add swap (§2.4), close the desktop/browser, and lower `--memPoolSize`                                                                                                 |
+
+---
+
+## 11. Checklist
+
+- [ ] JetPack 6.2 flashed; `trt.__version__` reports 10.x
+- [ ] `nvpmodel -m 0` and `jetson_clocks` applied
+- [ ] `numpy<2`, `pycuda`, and `onnxruntime` installed
+- [ ] `cracknet_sim.onnx` copied to `~/cracknet`
+- [ ] `cracknet_fp16.engine` built with trtexec
+- [ ] `check_parity.py` shows under 0.1 % mask disagreement
+- [ ] C920 on MJPG 1280×720@30, focus and exposure locked
+- [ ] `live.py` runs; threshold and min-area tuned on real surfaces
