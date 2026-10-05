@@ -18,3 +18,7 @@ val_samples/
 .claude/
 __pycache__/
 *.pyc
+
+# Local Jetson credentials - never commit
+tools/.jetson.env
+.jetson.env
