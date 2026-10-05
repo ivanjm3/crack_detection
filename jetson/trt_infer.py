@@ -8,6 +8,11 @@ MEAN = np.array([0.485, 0.456, 0.406], np.float32)
 STD = np.array([0.229, 0.224, 0.225], np.float32)
 
 
+def logit(p):
+    """Probability threshold -> equivalent logit threshold. 0.55 -> 0.2007."""
+    return float(np.log(p / (1.0 - p)))
+
+
 class CrackNetTRT:
     def __init__(self, engine_path):
         logger = trt.Logger(trt.Logger.WARNING)
@@ -46,3 +51,22 @@ class CrackNetTRT:
         self.stream.synchronize()
         logits = h_out.reshape(oshape)[0, 0]
         return 1.0 / (1.0 + np.exp(-logits))
+
+    def infer_logits(self, x):
+        """x: 1x3xSxS float32 -> raw logit map SxS float32.
+
+        Same as infer() without the sigmoid. Thresholding a probability at t is
+        identical to thresholding the logit at log(t/(1-t)), and only the mask is
+        used downstream - never the probability values - so the sigmoid is pure
+        cost. It is ~2.5 ms per call on this board, which was negligible for one
+        frame but is 22 % of inference once a stationary scan runs 15 tiles per
+        camera.
+        """
+        h_in, d_in, _, _ = self.bufs[self.in_name]
+        h_out, d_out, oshape, _ = self.bufs[self.out_name]
+        np.copyto(h_in, x.ravel())
+        cuda.memcpy_htod_async(d_in, h_in, self.stream)
+        self.ctx.execute_async_v3(self.stream.handle)
+        cuda.memcpy_dtoh_async(h_out, d_out, self.stream)
+        self.stream.synchronize()
+        return h_out.reshape(oshape)[0, 0]

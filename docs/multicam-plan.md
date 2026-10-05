@@ -341,14 +341,39 @@ Against the current pipeline that is **1.8× the swath and 2.1× finer crack
 detection, simultaneously** — purely from spending inference that a stationary rig has
 to spare.
 
-The cost is trivial at this duty cycle:
+**Measured**, not estimated — `bench_tiling.py` runs the real path (real engine,
+real preprocessing, real tiling) on a synthetic frame:
 
-```
- 720p:  6 tiles/cam x 3 cams = 18 inferences = 0.16 s
-1080p: 15 tiles/cam x 3 cams = 45 inferences = 0.39 s
-```
+| | 720p, 6 tiles/cam | 1080p, 15 tiles/cam |
+| --- | ---: | ---: |
+| preprocess | 35.4 ms | 89.0 ms |
+| inference | 52.1 ms | 130.3 ms |
+| tile + stitch | 0.6 ms | 1.7 ms |
+| **per camera** | **88.2 ms** | **221.1 ms** |
+| **x3 cameras, per scan position** | **0.26 s** | **0.66 s** |
 
-Under half a second of GPU per scan position.
+The earlier estimate of 0.39 s was 1.7x optimistic: it multiplied `trtexec`'s pure
+GPU-compute figure by the tile count and ignored preprocessing, the host/device
+copies and the sigmoid. Still comfortably under a second, so the conclusion stands —
+but the method of estimating it was wrong, and two findings came out of fixing it.
+
+**`jetson_clocks` does not survive a reboot.** The first run of this benchmark
+reported 2.04 s per scan position. The GPU was sitting at 306 MHz of a possible
+1020 because the clock lock was lost in a reboot, costing a factor of 2.6. Any
+timing taken on this board without checking the clock state is meaningless;
+`bench_tiling.py` now checks and prints a warning rather than silently reporting a
+bad number.
+
+**Thresholding in logit space removes the sigmoid.** `sigmoid(x) > 0.55` is
+identical to `x > logit(0.55) = 0.200671`, and only the mask is used downstream.
+Skipping it cut inference from 169 ms to 130 ms at 1080p (23 %). Verified
+pixel-exact: **0 differing pixels out of 3,932,160** across a full 15-tile frame.
+Negligible for a single live frame — which is why it was left unapplied before —
+but it scales with tile count, so a stationary tiled scan pays it 45 times.
+
+Preprocessing is now the largest single cost at 40 %. It is CPU numpy
+(float conversion, normalise, transpose, contiguous copy) and would move to the GPU
+if the scan cycle ever needs tightening.
 
 ### 4A.4 Standoff, restated for stationary 1080p tiling
 
