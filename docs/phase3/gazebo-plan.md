@@ -282,8 +282,11 @@ end-to-end detection demo.
 
 ## 7. Decisions still needed
 
-1. **Does the assignment require ROS specifically?** If yes, add ~50 minutes for
-   `ros-humble-ros-base` plus `ros_gz_bridge`, and cut the fallback buffer.
+1. ~~Does the assignment require ROS?~~ **Resolved: no.** It is a simulation
+   only, with no ROS requirement, so the no-ROS plan above stands and the
+   ~50 minutes it would have cost stays in the budget. If ROS is ever needed
+   later, `ros_gz_bridge` can publish the existing camera topics without
+   changing anything in this build.
 2. **Tunnel size.** This plan assumes a full-size road tunnel (9 m × 6.5 m),
    which makes the resolution limit in §2 real and visible. A service tunnel
    (2–3 m) would let the C920 meet spec and remove the finding. The road tunnel
