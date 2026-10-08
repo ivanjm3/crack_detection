@@ -17,7 +17,18 @@
        -webkit-font-smoothing:antialiased;overflow:hidden}
 
   .app{display:grid;height:100vh;
-       grid-template-rows:auto 1fr auto;
+       /* The composite is three 16:9 frames side by side, so it is about 5.3:1
+          and can only ever fill the stage by WIDTH. When the stage row was 1fr
+          it swallowed every spare pixel of height and left more than half of
+          itself as dead black above and below the image. The spare height goes
+          goes to the event log, which grows into it as a run proceeds.
+          Two things were tried first and both were worse. Letting the strip
+          grow meant object-fit:cover cropped each camera panel, so a zoomed
+          centre sat next to a whole-frame coverage percentage - an invitation
+          to misread. Using object-fit:contain instead just moved the empty
+          space inside each panel. A per-camera view has to show the whole
+          frame, so the strip keeps its 16:9 shape. */
+       grid-template-rows:auto auto 1fr;
        grid-template-columns:1fr 310px;
        grid-template-areas:"head head" "main side" "log side";gap:1px;
        background:var(--line)}
@@ -39,9 +50,12 @@
   /* ---------- main view ---------- */
   main{grid-area:main;background:var(--bg);position:relative;
        display:flex;flex-direction:column;min-height:0}
-  .stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;
+  .stage{flex:0 0 auto;display:flex;align-items:center;justify-content:center;
          padding:14px;position:relative}
-  .stage img{max-width:100%;max-height:100%;object-fit:contain;
+  /* max-height is in vh, not %: the stage now sizes to its content, so a
+     percentage height would be measured against a parent that is itself being
+     measured from this element. */
+  .stage img{max-width:100%;max-height:46vh;object-fit:contain;
              border-radius:4px;background:#000;display:block}
   .tag{position:absolute;left:22px;top:22px;font:11px/1 var(--mono);
        color:var(--mut);background:rgba(13,15,18,.82);padding:6px 9px;
@@ -55,7 +69,7 @@
   .strip{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
          background:var(--line);border-top:1px solid var(--line)}
   .cam{background:var(--panel);padding:8px 10px}
-  .cam img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#000;
+  .cam img{width:100%;aspect-ratio:16/9;object-fit:contain;background:#000;
            border-radius:3px;display:block}
   .cam .row{display:flex;align-items:center;gap:7px;margin-top:7px}
   .cam .nm{font:600 11px/1 var(--mono);letter-spacing:.06em}
@@ -81,7 +95,7 @@
 
   /* ---------- log ---------- */
   .logwrap{grid-area:log;background:var(--panel);display:flex;flex-direction:column;
-           height:190px;min-height:0}
+           min-height:170px}
   .logbar{display:flex;align-items:center;gap:10px;padding:7px 14px;
           border-bottom:1px solid var(--line)}
   .logbar .sect{margin:0}

@@ -186,10 +186,11 @@ class ScanLoop(threading.Thread):
                              if k not in ("frame", "mask")} for c in cams],
             }
 
-            # Log on CHANGE, plus a periodic heartbeat. Logging every scan would
-            # push a line every ~6 s and bury the one line that matters; logging
-            # only on change would leave the panel looking frozen during a long
-            # clear run, which is indistinguishable from a crashed loop.
+            # Log on CHANGE, plus a heartbeat every 4th scan (~27 s). Logging
+            # every scan would push a line every ~6 s and bury the one line that
+            # matters; logging only on change would leave the panel silent
+            # through a long clear run, which on screen is indistinguishable
+            # from a crashed loop.
             if tot["crack"] != last_verdict:
                 if tot["crack"]:
                     hot = max(cams, key=lambda c: c["coverage"])
@@ -201,7 +202,7 @@ class ScanLoop(threading.Thread):
                 else:
                     self.log("clear", "surface clear")
                 last_verdict = tot["crack"]
-            elif tot["scan_index"] % 10 == 0:
+            elif tot["scan_index"] % 4 == 0:
                 self.log("info", "scan %d - %s, %.2f %% coverage, cycle %.2f s"
                          % (tot["scan_index"],
                             "crack" if tot["crack"] else "clear",
