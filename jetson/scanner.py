@@ -62,7 +62,13 @@ class Scanner:
                                  verbose=args.verbose)
         self.tiles = plan_tiles(args.width, args.height, tile=self.size,
                                 overlap=args.overlap)
-        self.gsd = measure.gsd_mm_px(args.standoff, args.width, args.hfov)
+        # mm/px is the scale factor on EVERY width this system reports, so it
+        # is linear in the standoff: assume 0.40 m when the camera is really at
+        # 0.15 m and every crack is reported 2.7x too wide. The field-of-view
+        # calculation is only ever as good as the distance it is given, so a
+        # directly measured figure overrides it.
+        self.gsd = (args.mm_per_px if args.mm_per_px > 0 else
+                    measure.gsd_mm_px(args.standoff, args.width, args.hfov))
         # The shape filter's thickness limit becomes PHYSICAL here, which is the
         # payoff docs/multicam-plan.md §2.2 promised: once a pixel has a known
         # size on the ground, "too thick to be a crack" can be stated in
@@ -216,6 +222,9 @@ def add_arguments(ap):
                          "single-camera pixel scale")
     ap.add_argument("--max-solidity", type=float, default=0.80)
     ap.add_argument("--no-shape-filter", action="store_true")
+    ap.add_argument("--mm-per-px", type=float, default=0.0,
+                    help="measured ground sample distance; overrides --standoff. "
+                         "Photograph something of known width and divide.")
     ap.add_argument("--standoff", type=float, default=0.40,
                     help="camera-to-surface distance in metres; sets mm/px")
     ap.add_argument("--hfov", type=float, default=70.42,

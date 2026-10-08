@@ -186,7 +186,13 @@ class ScanLoop(threading.Thread):
         # The square centre crop is what the model sees, so the ground sample
         # distance follows the CROP and the resize to 512, not the frame width.
         crop_px = min(a.live_width, a.live_height)
-        gsd_full = measure.gsd_mm_px(a.standoff, a.live_width, a.hfov)
+        if a.mm_per_px > 0:
+            # A measured figure is given for the FULL-RESOLUTION frame, so it
+            # has to be scaled to this mode's frame width before the crop and
+            # resize are applied on top.
+            gsd_full = a.mm_per_px * (a.width / float(a.live_width))
+        else:
+            gsd_full = measure.gsd_mm_px(a.standoff, a.live_width, a.hfov)
         gsd = gsd_full * crop_px / float(S)
         max_halfwidth_px = (a.max_width_mm / 2.0) / gsd
         # min_area was chosen for native 1080p tiles. These pixels are ~2.8x

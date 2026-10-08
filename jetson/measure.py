@@ -47,6 +47,60 @@ def gsd_mm_px(standoff_m, width_px, hfov_deg=70.42):
     return swath_mm / float(width_px)
 
 
+def _width_from_distance(sub):
+    """Width in pixels from the distance transform, as (median, p95, max).
+
+    area/perimeter gives the MEAN width over the whole component, which is the
+    right answer for a clean straight stroke and the wrong one in two cases that
+    occur constantly:
+
+      Branching. A forked crack has far more perimeter per unit area than a
+      single stroke, so the mean width comes out too small - exactly where a
+      crack is most structurally interesting.
+
+      Taper. A crack that is 4 mm at one end and hairline at the other has a
+      mean that describes neither end, and the widest point is the one that
+      matters for grading.
+
+    The distance transform gives, for every interior pixel, the distance to the
+    nearest background pixel - which is the LOCAL half-width at that point. The
+    ridge running down the middle of the stroke therefore carries the local
+    width profile, and a percentile over the ridge is a width that survives both
+    branching and taper.
+
+    Only ridge pixels are counted. Every component tapers to zero at its ends,
+    so averaging the distance transform over all pixels would drag any width
+    toward zero regardless of the shape - the ridge is where the width actually
+    lives. The ridge is taken as pixels within half a pixel of the local
+    maximum, which is cheap and needs no skeletonisation.
+    """
+    # The component arrives as its own tight bounding box, so a stroke can fill
+    # the crop edge to edge and leave NO background pixel inside it. The
+    # distance transform then has nothing to measure from and returns distances
+    # of order the crop size: a 2 px line 300 px long measured as 302 px wide.
+    # One pixel of zero border gives every stroke an outside to be measured
+    # against, and costs nothing.
+    sub = cv2.copyMakeBorder(sub, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
+    dist = cv2.distanceTransform(sub, cv2.DIST_L2, 5)
+    peak = cv2.dilate(dist, np.ones((3, 3), np.uint8))
+    ridge = dist[(dist > 0) & (dist >= peak - 0.5)]
+    if ridge.size == 0:
+        return 0.0, 0.0, 0.0
+
+    # Width is 2d - 1, not 2d. The transform measures to the nearest ZERO
+    # PIXEL, whose centre lies one full pixel beyond the last foreground pixel,
+    # while the stroke's actual edge is only half a pixel beyond it. So the
+    # ridge value overstates the half-width by exactly 0.5 px, and 2d would
+    # report a 3 px crack as 4 px - at 0.29 mm/px that is a 0.29 mm error on a
+    # measurement whose whole point is sub-millimetre resolution.
+    def to_width(d):
+        return 2.0 * d - 1.0
+
+    return (to_width(float(np.median(ridge))),
+            to_width(float(np.percentile(ridge, 95))),
+            to_width(float(ridge.max())))
+
+
 def components(mask, gsd, min_area=1):
     """Per-component measurements for a cleaned mask.
 
@@ -71,16 +125,39 @@ def components(mask, gsd, min_area=1):
         perim = sum(cv2.arcLength(c, True) for c in cnts)
         if perim <= 0:
             continue
-        width_px = 2.0 * area / perim
+        mean_px = 2.0 * area / perim
+        med_px, p95_px, max_px = _width_from_distance(sub)
         # A single isolated pixel has area 1 and perimeter 4, giving a width of
         # half a pixel. Physically a detected pixel is at least one pixel wide,
         # and reporting sub-pixel widths would imply a precision the sensor does
         # not have, so the floor is one pixel.
-        width_px = max(width_px, 1.0)
+        mean_px = max(mean_px, 1.0)
+        med_px = max(med_px, 1.0)
         out.append({
             "area_px": area,
-            "width_mm": width_px * gsd,
-            "length_mm": (area / width_px) * gsd,
+            # The headline width is the 95th percentile of the ridge, chosen on
+            # measured evidence rather than taste (test_measure.py):
+            #
+            #   uniform strokes  p95 is exact - 3, 5, 9, 15 px recovered as
+            #                    3.00, 5.00, 9.00, 15.00
+            #   branched         p95 is exact where the ridge MEDIAN is not:
+            #                    the junction contributes a cluster of short
+            #                    distances that drags the median to 1.80 on a
+            #                    3 px fork, a 40 % underestimate
+            #   tapered          p95 lands on the wide end, which is the end
+            #                    that gets graded; the median describes neither
+            #                    end of a taper
+            #
+            # max is not used as the headline because a single ragged pixel at a
+            # junction sets it - on the 9 px fork max reads 10.59 against a true
+            # 9.00. p95 discards that tail without discarding the wide end.
+            "width_mm": max(p95_px, 1.0) * gsd,
+            "width_max_mm": max(max_px, 1.0) * gsd,
+            "width_median_mm": med_px * gsd,
+            "width_mean_mm": mean_px * gsd,
+            # Length from area/mean-width: a meandering crack is longer than its
+            # bounding box diagonal, so the box cannot be used here.
+            "length_mm": (area / mean_px) * gsd,
             "x": x, "y": y, "w": w, "h": h,
         })
     out.sort(key=lambda c: c["width_mm"], reverse=True)
@@ -94,5 +171,6 @@ def summarise(mask, gsd, min_area=1):
         "coverage": float((mask > 0).mean()),
         "components": len(comps),
         "widest_mm": comps[0]["width_mm"] if comps else None,
+        "widest_max_mm": max((c["width_max_mm"] for c in comps), default=None),
         "longest_mm": max((c["length_mm"] for c in comps), default=None),
     }
