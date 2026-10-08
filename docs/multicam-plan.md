@@ -442,6 +442,77 @@ cameras stream simultaneously the open/settle cost disappears and it drops to ~3
   exported at 512 and has only ever been fed downscaled crops; native-scale input is a
   different spatial frequency distribution and should be checked, not assumed.
 
+### 4A.8 Phase 0 results — measured 2026-10-07
+
+Three C920s on the board, all on Bus 01 behind the one Realtek USB 2.0 hub.
+
+**Simultaneity, by resolution** (`multicam_probe.py`):
+
+| Mode | Cameras streaming | Rate |
+|---|---|---|
+| 640x480 MJPG 15 | 3 of 3 | 15.0 fps each |
+| 1280x720 MJPG 30 | **2 of 3** | 15.2 fps each |
+
+The third camera at 720p opens and then delivers no frame. `uvcvideo` already runs
+with every quirk set (`quirks = 0xFFFFFFFF`), so the bandwidth-fix quirk — the usual
+remedy — is already spent. 640x480 is not a way out: it costs 0.88 mm/px against
+1080p's 0.29, which deletes the resolution budget the design exists to buy.
+
+**Sequential capture dissolves it**, as §4A.2 predicted. Opening, capturing and
+releasing each camera in turn means only one bandwidth reservation is ever
+outstanding. All three deliver full 1080p frames this way, every pass.
+
+**Cost of a scan position** (`capture.py bench`, 4-frame averaging, clocks locked):
+
+| Stage | Per camera | x3 |
+|---|---|---|
+| open + stream start | ~0.99 s | 2.97 s |
+| exposure confirm | ~0.53 s | 1.59 s |
+| grab + average 4 | ~0.22 s | 0.66 s |
+| **capture total** | | **5.93 s** |
+| inference (§4A.3) | 0.22 s | 0.66 s |
+
+So capture dominates: **~6.6 s per scan position**, 90 % of it capture and 10 %
+inference. The open cost is irreducible without keeping streams alive, which is
+exactly what the bandwidth wall forbids — so it is the price of three cameras on
+one USB 2.0 bus, not an implementation inefficiency.
+
+Role assignment uses `/dev/v4l/by-path`, not `/dev/videoN`, which shuffles on
+reboot. Run `capture.py identify` once and record the mapping in `jetson/rig.json`.
+
+### 4A.9 The exposure actuator is quantised — found here, not predicted
+
+Phase 0 surfaced a problem none of the planning anticipated, and it invalidated an
+assumption the auto-exposure design rested on.
+
+`exposure_time_absolute` advertises 3..2047 step 1, and with no stream open the
+driver does accept all 747 values. **While streaming at 1080p it does not.** The
+camera snaps the shutter to a x2 ladder — measured: **38, 77, 156, 312, 624** — and
+clamps everything else to the nearest rung. Exposure therefore has *one stop* of
+resolution, and median luma can only take values a factor of two apart (99 or 148 on
+the test scene; 120 is unreachable).
+
+Three consequences, all now fixed in `camera_ctl.py`:
+
+1. **The loop could not converge.** It oscillated 156 <-> 312 forever, chasing a
+   setpoint between rungs. It now predicts the next rung's luma and only steps when
+   that does not overshoot, using gain — the continuous actuator — for the remainder.
+2. **A +-8 tolerance was finer than the actuator.** Demanding it forced gain to fill
+   every gap, and the simulation settled at gain 93–111. Gain turns read noise into
+   thin bright streaks, which is the exact false-positive signature from §7. The band
+   is now +-30, and gain stays at 0 in ordinary scenes.
+3. **"exposure drifted 156 -> 312" in the original bug was not drift.** It was being
+   pushed up exactly one rung. The same measurement explains both failures.
+
+A fourth fix came from the rig rather than the camera: a freshly built controller had
+no blind window, so it evaluated the first frame after stream start — a known
+transient — and stepped a whole rung on it. Luma walked 148 -> 199 -> 255 across scan
+positions until it clipped. `AutoExposure.hold()` now declares that window.
+
+Settled behaviour, all three cameras, four consecutive passes: `exp=156 gain=0`,
+luma 94–99, converged every time, 0.2 % of pixels clipped on a white ceiling with a
+blown-out window in frame.
+
 ---
 
 ## 5. Open risks
