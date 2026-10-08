@@ -367,6 +367,77 @@ class SequentialRig:
             cam.close()
 
 
+class SimultaneousRig:
+    """All cameras open at once, at a resolution the USB bus can actually carry.
+
+    SequentialRig exists because three 1080p streams do not fit on one USB 2.0
+    bus. The cost of that is ~1.15 s per camera per scan position, of which
+    675 ms is the camera's own STREAMON - sensor start and bandwidth
+    negotiation - paid three times because each camera must release the bus
+    before the next can take it. A scan position therefore lands at ~6.7 s, and
+    no tuning makes that look like video, because it is not video.
+
+    Phase 0 measured the other end of the trade: at 640x480 all three stream
+    together at 15 fps indefinitely. So a smooth feed IS available, just not at
+    survey resolution. This class is that feed - every camera opened once and
+    held open, read round-robin.
+
+    What it costs, stated plainly because the number on screen depends on it:
+    640x480 is 0.88 mm/px at 0.40 m against 1080p's 0.29, and the frame is then
+    centre-cropped square and resized to the model's 512, so the effective
+    sampling is ~0.83 mm/px. The smallest resolvable crack goes from ~0.59 mm to
+    ~1.65 mm. This is a monitoring view, not a measurement, and anything built
+    on it has to say so.
+    """
+
+    def __init__(self, width=640, height=480, fps=15, verbose=False):
+        self.cams = [Camera(role, cam, width, height, fps, verbose=verbose)
+                     for role, cam in load_rig().items()]
+        self.opened = False
+
+    def open(self):
+        """Open every camera and leave them streaming.
+
+        Opened in order, and a failure names which camera refused, because the
+        failure mode here is specifically the third one: the bus runs out of
+        isochronous bandwidth and the camera opens but never delivers a frame.
+        """
+        for n, cam in enumerate(self.cams, 1):
+            try:
+                cam.open()
+            except RuntimeError as exc:
+                self.close()
+                raise RuntimeError(
+                    "camera %d of %d (%s) would not stream at %dx%d: %s - the "
+                    "bus cannot carry this many at this resolution"
+                    % (n, len(self.cams), cam.role, cam.w, cam.h, exc))
+        self.opened = True
+        return self
+
+    def read(self):
+        """One frame per camera, round-robin. role -> (frame, ae_stats).
+
+        A camera that misses a read is skipped rather than retried: with every
+        stream live, blocking on one slow camera would stall the other two, and
+        the next pass is 60 ms away.
+        """
+        out = {}
+        for cam in self.cams:
+            ok, frame = cam.cap.read()
+            if not ok or frame is None:
+                continue
+            cam.ae.update(frame)
+            out[cam.role] = (frame, {"exposure": cam.ae.exp, "gain": cam.ae.gain,
+                                     "median_luma": cam.ae.stats["median"],
+                                     "converged": True})
+        return out
+
+    def close(self):
+        for cam in self.cams:
+            cam.close()
+        self.opened = False
+
+
 def cmd_identify(args):
     cams = discover()
     print("%d capture-capable camera(s)\n" % len(cams))

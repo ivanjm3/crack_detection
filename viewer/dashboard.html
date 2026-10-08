@@ -43,6 +43,7 @@
   .pill.on{color:var(--ok);border-color:#2b4a3c;background:#12211a}
   .pill.off{color:var(--bad);border-color:#4a2b29;background:#1f1312}
   .pill.demo{color:var(--warn);border-color:#4a3f22;background:#1f1a10}
+  .pill.mode{color:#7fd1ff;background:#0f1f2b;border-color:#1e4259}
   .spacer{flex:1}
   .hstat{font:12px/1 var(--mono);color:var(--mut)}
   .hstat b{color:var(--ink);font-weight:600}
@@ -69,8 +70,13 @@
   .strip{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
          background:var(--line);border-top:1px solid var(--line)}
   .cam{background:var(--panel);padding:8px 10px}
-  .cam img{width:100%;aspect-ratio:16/9;object-fit:contain;background:#000;
-           border-radius:3px;display:block}
+  /* No fixed aspect-ratio: scan mode publishes 16:9 frames and live preview
+     publishes the square centre crop the model actually sees. Pinning 16/9
+     pillarboxed the square ones in black. min-height only stops the row
+     collapsing before the first image loads, and max-height stops a square
+     preview frame growing tall enough to push the log controls off-screen. */
+  .cam img{width:100%;height:auto;min-height:90px;max-height:30vh;
+           object-fit:contain;background:#000;border-radius:3px;display:block}
   .cam .row{display:flex;align-items:center;gap:7px;margin-top:7px}
   .cam .nm{font:600 11px/1 var(--mono);letter-spacing:.06em}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex:none}
@@ -130,6 +136,7 @@
     <div class="brand">CrackNet <span>· inspection console</span></div>
     <div class="pill" id="conn">connecting</div>
     <div class="pill demo" id="srcpill" hidden>demo · synthetic</div>
+    <div class="pill mode" id="modepill" hidden>live preview</div>
     <div class="spacer"></div>
     <div class="hstat">scan <b id="hscan">—</b></div>
     <div class="hstat">infer <b id="hinfer">—</b></div>
@@ -164,7 +171,7 @@
     <div class="kpi">
       <div class="k">tiles / camera</div><div class="v" id="ktiles">—</div>
       <div class="k">inference</div><div class="v" id="kinfer">—</div>
-      <div class="k">scan cycle</div><div class="v" id="kcycle">—</div>
+      <div class="k" id="lcycle">scan cycle</div><div class="v" id="kcycle">—</div>
       <div class="k">threshold</div><div class="v" id="kthr">—</div>
       <div class="k">min area</div><div class="v" id="kmin">—</div>
     </div>
@@ -217,6 +224,19 @@ function applyStatus(d){
   $("conn").className = "pill on";
   $("srcpill").hidden = d.source !== "synthetic";
 
+  // The two modes publish DIFFERENT QUANTITIES under the same field names.
+  // Scan mode measures 1080p native tiles at ~0.29 mm/px; live preview measures
+  // a 640x480 frame centre-cropped and resized, at ~0.83 mm/px. A widest-crack
+  // figure from one is not comparable with the other, so the mode is stated in
+  // the header, the stage caption and the scan-cycle row, and the cycle row
+  // becomes a frame rate when that is what it actually is.
+  const live = d.mode === "live";
+  $("modepill").hidden = !live;
+  $("comptag").textContent = live
+    ? "live preview · " + (d.gsd_mm_px ?? "?") + " mm/px · monitoring, not measurement"
+    : "display composite · detection runs per-camera at native resolution";
+  $("lcycle").textContent = live ? "frame rate" : "scan cycle";
+
   const crack = !!d.crack;
   $("verdict").textContent = crack ? "CRACK" : "CLEAR";
   $("verdict").className = "verdict " + (crack ? "crack" : "clear");
@@ -238,7 +258,8 @@ function applyStatus(d){
 
   $("ktiles").textContent = d.tiles_per_camera ?? "—";
   $("kinfer").textContent = d.infer_ms != null ? d.infer_ms.toFixed(0) + " ms" : "—";
-  $("kcycle").textContent = d.cycle_s != null ? d.cycle_s.toFixed(2) + " s" : "—";
+  $("kcycle").textContent = d.fps != null ? d.fps.toFixed(1) + " fps"
+                          : d.cycle_s != null ? d.cycle_s.toFixed(2) + " s" : "—";
   $("kthr").textContent   = d.thresh ?? "—";
   $("kmin").textContent   = d.min_area != null ? d.min_area + " px" : "—";
 

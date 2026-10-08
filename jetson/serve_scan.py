@@ -28,9 +28,14 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import cv2
+import numpy as np
 
+import measure
 import scanner
+from capture import SimultaneousRig
+from live import center_square, clean_mask
 from scanner import Scanner, composite, overlay
+from trt_infer import CrackNetTRT, logit
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PAGE_CANDIDATES = (
@@ -124,9 +129,146 @@ class ScanLoop(threading.Thread):
         ctx = pycuda.autoinit.context
         ctx.push()
         try:
-            self._loop()
+            if self.args.mode == "live":
+                self._loop_live()
+            else:
+                self._loop()
         finally:
             ctx.pop()
+
+    def _publish(self, jp, st):
+        with self.lock:
+            self.jpegs = jp
+            self.status = st
+            self.seq += 1
+            self.lock.notify_all()
+
+    def _encode(self, cams, composite_img, a):
+        jp = {}
+        ok, buf = cv2.imencode(".jpg", composite_img,
+                               [cv2.IMWRITE_JPEG_QUALITY, a.quality])
+        if ok:
+            jp["composite"] = buf.tobytes()
+        for i, c in enumerate(cams):
+            vis = overlay(c["frame"], c["mask"])
+            h = max(1, int(vis.shape[0] * a.thumb_width / vis.shape[1]))
+            vis = cv2.resize(vis, (a.thumb_width, h), interpolation=cv2.INTER_AREA)
+            ok, buf = cv2.imencode(".jpg", vis, [cv2.IMWRITE_JPEG_QUALITY, a.quality])
+            if ok:
+                jp[i] = buf.tobytes()
+        return jp
+
+    def _loop_live(self):
+        """Smooth preview: every camera held open at a resolution the bus carries.
+
+        Detection here is the ORIGINAL single-camera path - centre-crop square,
+        resize to the model's 512, one inference per camera - not the tiled scan
+        path. At 640x480 the frame is shorter than a 512 tile in one dimension so
+        tiling is not even available, and it would be pointless if it were: the
+        detail tiling exists to preserve is not in the frame to begin with.
+
+        What this publishes is therefore a different quantity from what scan mode
+        publishes. That is why the mode travels in the status payload and onto
+        the screen - a viewer must never have to guess which one they are reading.
+        """
+        a = self.args
+        net = CrackNetTRT(a.engine)
+        S = net.size
+        thr = logit(a.thresh)
+        rig = SimultaneousRig(a.live_width, a.live_height, a.live_fps,
+                              verbose=a.verbose)
+        try:
+            rig.open()
+        except RuntimeError as exc:
+            self.log("warn", str(exc))
+            raise
+
+        # The square centre crop is what the model sees, so the ground sample
+        # distance follows the CROP and the resize to 512, not the frame width.
+        crop_px = min(a.live_width, a.live_height)
+        gsd_full = measure.gsd_mm_px(a.standoff, a.live_width, a.hfov)
+        gsd = gsd_full * crop_px / float(S)
+        max_halfwidth_px = (a.max_width_mm / 2.0) / gsd
+        # min_area was chosen for native 1080p tiles. These pixels are ~2.8x
+        # coarser, so the same physical speck covers ~8x fewer of them; carrying
+        # the number across unchanged would reject almost everything.
+        min_area = max(20, int(round(a.min_area * (0.294 / gsd) ** 2)))
+
+        self.log("info", "LIVE PREVIEW %dx%d, %d camera(s), %.2f mm/px, "
+                         "min crack ~%.2f mm - monitoring, not measurement"
+                 % (a.live_width, a.live_height, len(rig.cams), gsd, 2 * gsd))
+
+        done, fps, t_prev = 0, 0.0, time.perf_counter()
+        while not self.stop_flag.is_set():
+            got = rig.read()
+            if not got:
+                time.sleep(0.02)
+                continue
+
+            cams, infer_total = [], 0.0
+            for role in ("left", "top", "right"):
+                if role not in got:
+                    continue
+                frame, ae = got[role]
+                crop, _ = center_square(frame)
+                small = cv2.resize(crop, (S, S), interpolation=cv2.INTER_AREA)
+                t0 = time.perf_counter()
+                lg = net.infer_logits(CrackNetTRT.preprocess(
+                    cv2.cvtColor(small, cv2.COLOR_BGR2RGB)))
+                infer_total += time.perf_counter() - t0
+                mask = clean_mask((lg > thr).astype(np.uint8) * 255, min_area,
+                                  max_area_frac=a.max_area_frac,
+                                  max_halfwidth=max_halfwidth_px,
+                                  max_solidity=a.max_solidity,
+                                  shape_filter=not a.no_shape_filter)
+                m = measure.summarise(mask, gsd, min_area=1)
+                # NEAREST because a mask is a label image: interpolating between
+                # 0 and 255 would invent partial-membership pixels meaning nothing.
+                big = cv2.resize(mask, (crop.shape[1], crop.shape[0]),
+                                 interpolation=cv2.INTER_NEAREST)
+                cams.append({
+                    "name": role.upper(), "ok": True, "frame": crop, "mask": big,
+                    "coverage": m["coverage"], "components": m["components"],
+                    "widest_mm": m["widest_mm"], "longest_mm": m["longest_mm"],
+                    "crack": m["coverage"] > a.alert_frac,
+                    "exposure": ae["exposure"], "gain": ae["gain"],
+                    "median_luma": ae["median_luma"], "converged": True,
+                    "infer_ms": infer_total * 1000.0,
+                })
+
+            now = time.perf_counter()
+            fps = 0.9 * fps + 0.1 * (1.0 / max(now - t_prev, 1e-6))
+            t_prev = now
+            done += 1
+
+            widths = [c["widest_mm"] for c in cams if c["widest_mm"] is not None]
+            cov = float(np.mean([c["coverage"] for c in cams])) if cams else 0.0
+            crack = any(c["crack"] for c in cams)
+
+            st = {
+                "source": "jetson", "mode": "live",
+                "crack": crack, "coverage": cov,
+                "widest_mm": max(widths) if widths else None,
+                "components": sum(c["components"] for c in cams),
+                "swath_m": round(len(cams) * gsd_full * a.live_width / 1000.0, 2),
+                "gsd_mm_px": round(gsd, 3), "tiles_per_camera": 1,
+                "infer_ms": infer_total * 1000.0 / max(len(cams), 1),
+                "cycle_s": 1.0 / max(fps, 1e-6), "fps": fps,
+                "thresh": a.thresh, "min_area": min_area,
+                "power_mode": power_mode(), "gpu_mhz": gpu_mhz(),
+                "temp_c": soc_temp_c(),
+                "uptime_s": int(time.time() - self.t0),
+                "scan_index": done,
+                "cameras": [{k: v for k, v in c.items()
+                             if k not in ("frame", "mask")} for c in cams],
+            }
+            self._publish(
+                self._encode(cams, composite(cams, a.composite_width), a), st)
+
+            if done % 300 == 0:
+                self.log("info", "live preview - %.1f fps, %.2f %% coverage, %s"
+                         % (fps, 100 * cov, "crack" if crack else "clear"))
+        rig.close()
 
     def _loop(self):
         a = self.args
@@ -147,23 +289,10 @@ class ScanLoop(threading.Thread):
                 time.sleep(2.0)
                 continue
 
-            jp = {}
-            ok, buf = cv2.imencode(".jpg", composite(cams, a.composite_width),
-                                   [cv2.IMWRITE_JPEG_QUALITY, a.quality])
-            if ok:
-                jp["composite"] = buf.tobytes()
-            for i, c in enumerate(cams):
-                vis = overlay(c["frame"], c["mask"])
-                h = int(vis.shape[0] * a.thumb_width / vis.shape[1])
-                vis = cv2.resize(vis, (a.thumb_width, h),
-                                 interpolation=cv2.INTER_AREA)
-                ok, buf = cv2.imencode(".jpg", vis,
-                                       [cv2.IMWRITE_JPEG_QUALITY, a.quality])
-                if ok:
-                    jp[i] = buf.tobytes()
+            jp = self._encode(cams, composite(cams, a.composite_width), a)
 
             st = {
-                "source": "jetson",
+                "source": "jetson", "mode": "scan",
                 "crack": tot["crack"],
                 "coverage": tot["coverage"],
                 "widest_mm": tot["widest_mm"],
@@ -215,11 +344,7 @@ class ScanLoop(threading.Thread):
                              % (c["name"], c["exposure"], c["gain"],
                                 c["median_luma"]))
 
-            with self.lock:
-                self.jpegs = jp
-                self.status = st
-                self.seq += 1
-                self.lock.notify_all()
+            self._publish(jp, st)
 
             if a.interval:
                 time.sleep(a.interval)
@@ -331,6 +456,12 @@ def main():
     ap.add_argument("--composite-width", type=int, default=1440)
     ap.add_argument("--thumb-width", type=int, default=420)
     ap.add_argument("--quality", type=int, default=82)
+    ap.add_argument("--mode", choices=("scan", "live"), default="scan",
+                    help="scan: 1080p tiled survey, ~6.7 s per position. "
+                         "live: smooth 640x480 preview, cameras held open")
+    ap.add_argument("--live-width", type=int, default=640)
+    ap.add_argument("--live-height", type=int, default=480)
+    ap.add_argument("--live-fps", type=int, default=15)
     args = ap.parse_args()
 
     PAGE = load_page()
