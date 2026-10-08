@@ -308,3 +308,33 @@ The simulation demonstrates three things, in order of value:
    detection running per-camera, never on a stitched image.
 3. **The complete pipeline running on synthetic input**, proving the perception
    stack is independent of where the frames come from.
+
+---
+
+## 9. Starting prompt
+
+Paste this into a fresh session to begin the build. It assumes nothing except
+the repo and `tools/.jetson.env`.
+
+> Build the Gazebo tunnel simulation. The full plan is in
+> `docs/phase3/gazebo-plan.md` — read it first, it is self-contained. Background
+> on the existing system is in `docs/phase2/`.
+>
+> Context: four-wheeled robot, stop-and-scan, driving through a road tunnel with
+> three cameras covering the cross-section (left wall, crown, right wall) plus a
+> chase camera for the 3D view. The Jetson is at 192.168.55.1 — connect with
+> `python tools/jssh.py "<cmd>"`, which reads credentials from `tools/.jetson.env`.
+> On Git Bash, prefix remote paths with `MSYS_NO_PATHCONV=1`.
+>
+> Constraints, already decided — do not re-litigate them:
+> - Gazebo Fortress on the Jetson, **no ROS**
+> - Headless rendering, no X session
+> - Robot is **kinematic** — set the pose directly, no diff-drive or physics tuning
+> - Sim cameras save frames to disk; `SimRig` feeds them into the existing
+>   pipeline; the existing dashboard streams it to Windows
+> - **3 hours total, install included.** Hard cutoff at 45 minutes: if headless
+>   rendering is not working by then, abandon Gazebo for the OpenCV fallback in §6
+>
+> Start with step 1: install `gz-fortress` and prove headless rendering works
+> before building anything. Stop the live preview server on port 8081 first.
+> Tell me the moment rendering is confirmed, or the moment you hit the cutoff.
