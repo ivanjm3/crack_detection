@@ -87,7 +87,13 @@ def run(name, reflectance, start_exp, start_gain, steps=400, target=120.0):
     ok = abs(final - target) <= 3 * ae.tol
     # A scene can be too dark to reach the target within the exposure and gain
     # caps. Maxing out is the correct response, not a failure.
-    maxed = cap.exp >= ae.exp_cap and cap.gain >= ae.gain_cap and final < target
+    # "At the caps" has to mean the top usable RUNG, not exp_cap itself.
+    # Exposure snaps to a x2 ladder (camera_ctl.EXP_RUNGS), so with exp_cap=500
+    # the highest reachable exposure is 312 and cap.exp can never equal 500.
+    # Comparing against exp_cap turned a legitimately-out-of-headroom scene into
+    # a failure.
+    top_rung = max(ae.rungs)
+    maxed = cap.exp >= top_rung and cap.gain >= ae.gain_cap and final < target
     # The state the field failure produced: darkest exposure, noisiest gain.
     bad = cap.exp <= EXP_MIN and cap.gain >= GAIN_MAX
     passed = (ok or maxed) and not bad
