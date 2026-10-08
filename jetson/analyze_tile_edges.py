@@ -26,7 +26,8 @@ import cv2
 import numpy as np
 
 from live import clean_mask
-from tiler import plan_tiles, extract, stitch_masks
+import verify
+from tiler import plan_tiles, extract, stitch_masks, blend_logits
 from trt_infer import CrackNetTRT, logit
 
 
@@ -68,6 +69,8 @@ def main():
     ap.add_argument("--thresh", type=float, default=0.55)
     ap.add_argument("--min-area", type=int, default=600)
     ap.add_argument("--overlap", type=float, default=0.15)
+    ap.add_argument("--blend", action="store_true",
+                    help="use the averaged blend instead of the union")
     args = ap.parse_args()
 
     paths = args.frames or sorted(glob.glob("scan/*.png"))
@@ -95,18 +98,27 @@ def main():
             continue
         h, w = frame.shape[:2]
         tiles = plan_tiles(w, h, tile=S, overlap=args.overlap)
-        masks = []
+        logits = []
         for crop in extract(frame, tiles, S):
             rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-            lg = net.infer_logits(CrackNetTRT.preprocess(rgb))
-            masks.append((lg > thr).astype(np.uint8) * 255)
-        raw = stitch_masks(masks, tiles, w, h, S)
+            logits.append(net.infer_logits(CrackNetTRT.preprocess(rgb)))
+
+        union = stitch_masks([(lg > thr).astype(np.uint8) * 255 for lg in logits],
+                             tiles, w, h, S)
+        blended, _ = blend_logits(logits, tiles, w, h, S)
+        raw = (blended > thr).astype(np.uint8) * 255 if args.blend else union
         cleaned = clean_mask(raw, args.min_area)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        verified, dropped = verify.apply(cleaned, gray)
         dist = border_distance(tiles, w, h, S)
 
-        print("%s  %d tiles  raw %.3f %%  cleaned %.3f %%"
+        print("%s  %d tiles  union %.3f %%  blended %.3f %%  "
+              "cleaned %.3f %%  verified %.3f %%  (dropped %d straight, %d flat)"
               % (path.split("/")[-1], len(tiles),
-                 100 * (raw > 0).mean(), 100 * (cleaned > 0).mean()))
+                 100 * (union > 0).mean(), 100 * ((blended > thr)).mean(),
+                 100 * (cleaned > 0).mean(), 100 * (verified > 0).mean(),
+                 dropped["straight"], dropped["flat"]))
+        cleaned = verified
         for lo, hi, n, rate in profile(raw, dist, edges):
             agg_raw[(lo, hi)] = agg_raw.get((lo, hi), 0.0) + rate * n
             agg_n[(lo, hi)] = agg_n.get((lo, hi), 0) + n
@@ -114,7 +126,7 @@ def main():
             agg_clean[(lo, hi)] = agg_clean.get((lo, hi), 0.0) + rate * n
 
     print("\ndetection rate by distance from the nearest tile border")
-    print("%-14s %12s %10s %10s" % ("band (px)", "pixels", "raw %", "cleaned %"))
+    print("%-14s %12s %10s %10s" % ("band (px)", "pixels", "raw %", "final %"))
     base_raw = base_clean = None
     for key in sorted(agg_n):
         lo, hi = key

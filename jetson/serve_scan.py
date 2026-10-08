@@ -33,6 +33,7 @@ import numpy as np
 import measure
 import scanner
 from capture import SimultaneousRig
+import verify
 from live import center_square, clean_mask
 from scanner import Scanner, composite, overlay
 from trt_infer import CrackNetTRT, logit
@@ -227,6 +228,17 @@ class ScanLoop(threading.Thread):
                                   max_halfwidth=max_halfwidth_px,
                                   max_solidity=a.max_solidity,
                                   shape_filter=not a.no_shape_filter)
+                if not a.no_verify:
+                    # Same two tests as scan mode. The preview is where someone
+                    # aims the rig, so it has to agree with what a scan will
+                    # later report - a preview that flags a seam the scan then
+                    # rejects teaches the operator to point at the wrong thing.
+                    gray_small = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+                    mask, _dropped = verify.apply(
+                        mask, gray_small,
+                        max_straightness=a.max_straightness,
+                        min_valleyness=a.min_valleyness,
+                        min_len_px=a.min_straight_len_mm / gsd)
                 m = measure.summarise(mask, gsd, min_area=1)
                 # NEAREST because a mask is a label image: interpolating between
                 # 0 and 255 would invent partial-membership pixels meaning nothing.

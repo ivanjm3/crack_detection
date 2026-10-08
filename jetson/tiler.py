@@ -76,6 +76,70 @@ def stitch_masks(masks, tiles, width, height, tile=512):
     return out
 
 
+def tile_window(tile=512, taper=0.25):
+    """Blending weight for one tile: flat in the middle, tapering at the edges.
+
+    A convolution has no information past the edge of its input, so a tile's
+    outermost rows are predicted from padding that does not exist in the scene.
+    Measured on this rig (analyze_tile_edges.py): detections within 2 px of a
+    tile border run 2.2x the interior rate in the raw mask and 11.3x after shape
+    filtering - the filter makes it worse, because a border artefact is a long
+    thin line along the seam, which is the geometry the filter is built to keep.
+
+    The taper makes each tile contribute almost nothing near its own edge, where
+    it is least informed, and full weight in its middle, where it is best
+    informed. Where two tiles overlap, the one that can actually see the context
+    wins. A raised-cosine is used rather than a linear ramp so the weight and
+    its first derivative are both continuous, which stops the blend from leaving
+    a visible step partway into the overlap.
+
+    The window never reaches zero (it is floored), because a pixel covered only
+    by tapered regions still has to get a value rather than a division by zero.
+    """
+    if not 0.0 <= taper < 0.5:
+        raise ValueError("taper must be in [0, 0.5)")
+    ramp = max(1, int(round(tile * taper)))
+    w = np.ones(tile, np.float32)
+    t = (np.arange(ramp, dtype=np.float32) + 0.5) / ramp
+    edge = 0.5 * (1.0 - np.cos(np.pi * t))          # raised cosine, 0 -> 1
+    w[:ramp] = edge
+    w[-ramp:] = edge[::-1]
+    w = np.maximum(w, 1e-3)
+    return np.outer(w, w)                            # separable, so an outer
+
+
+def blend_logits(logits, tiles, width, height, tile=512, taper=0.25):
+    """Weighted average of overlapping per-tile logit maps.
+
+    Returns (logit_map, weight_map). Threshold the logit map ONCE, afterwards -
+    which is the point. stitch_masks() thresholds each tile and takes the union,
+    so a pixel is marked if ANY tile fires on it, and the union therefore keeps
+    the strongest border artefact from every tile covering that pixel. Averaging
+    first lets a confident neighbour outvote an edge artefact instead.
+
+    Averaging in LOGIT space, not probability: the logit is what the network
+    actually produces, it is unbounded and roughly linear in evidence, and the
+    sigmoid is monotonic so a threshold maps across exactly. Averaging
+    probabilities would compress differences near 0 and 1, which is precisely
+    where confident tiles should be carrying the vote.
+
+    The weight map is returned rather than discarded so callers can tell a pixel
+    that several tiles agreed on from one that only a tile edge ever saw.
+    """
+    if len(logits) != len(tiles):
+        raise ValueError("%d logit maps for %d tiles" % (len(logits), len(tiles)))
+    win = tile_window(tile, taper)
+    acc = np.zeros((height, width), np.float32)
+    wsum = np.zeros((height, width), np.float32)
+    for lg, (x, y) in zip(logits, tiles):
+        if lg.shape[:2] != (tile, tile):
+            raise ValueError("logit map at (%d,%d) is %s, expected (%d,%d)"
+                             % (x, y, lg.shape[:2], tile, tile))
+        acc[y:y + tile, x:x + tile] += lg.astype(np.float32) * win
+        wsum[y:y + tile, x:x + tile] += win
+    return acc / np.maximum(wsum, 1e-6), wsum
+
+
 def coverage_map(tiles, width, height, tile=512):
     """How many tiles see each pixel. 0 anywhere means a gap in the plan."""
     cov = np.zeros((height, width), np.uint16)

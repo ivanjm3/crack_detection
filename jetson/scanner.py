@@ -30,7 +30,8 @@ import numpy as np
 import measure
 from capture import SequentialRig
 from live import clean_mask
-from tiler import plan_tiles, extract, stitch_masks
+import verify
+from tiler import plan_tiles, extract, blend_logits
 from trt_infer import CrackNetTRT, logit
 
 # min_area is in PIXELS, and native tiling changed what a pixel is.
@@ -87,24 +88,35 @@ class Scanner:
 
     def describe(self):
         return ("%d camera(s), %dx%d, %d tiles/camera, %.3f mm/px at %.2f m, "
-                "reject wider than %.1f mm (%.0f px)"
+                "reject wider than %.1f mm (%.0f px)%s"
                 % (len(self.rig.cams), self.a.width, self.a.height,
                    len(self.tiles), self.gsd, self.a.standoff,
-                   self.a.max_width_mm, 2 * self.max_halfwidth_px))
+                   self.a.max_width_mm, 2 * self.max_halfwidth_px,
+                   "" if self.a.no_verify else
+                   ", straightness < %.2f, valley < %.1f"
+                   % (self.a.max_straightness, self.a.min_valleyness)))
 
     def infer_frame(self, frame):
-        """Full-frame mask for one camera: tile, infer, stitch, clean."""
+        """Full-frame mask for one camera: tile, infer, blend, clean, verify."""
         crops = extract(frame, self.tiles, self.size)
-        masks = []
+        logits = []
         t0 = time.perf_counter()
         for crop in crops:
             rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-            lg = self.net.infer_logits(CrackNetTRT.preprocess(rgb))
-            masks.append((lg > self.thr).astype(np.uint8) * 255)
+            logits.append(self.net.infer_logits(CrackNetTRT.preprocess(rgb)))
         infer_s = time.perf_counter() - t0
 
-        raw = stitch_masks(masks, self.tiles, frame.shape[1], frame.shape[0],
-                           self.size)
+        # Overlapping tiles are AVERAGED, then thresholded once - not
+        # thresholded per tile and unioned. The union marked a pixel if any tile
+        # fired on it, so it kept the strongest border artefact from every tile
+        # covering that pixel; measured on this rig, detections within 2 px of a
+        # tile border ran 2.2x the interior rate raw and 11.3x after shape
+        # filtering (analyze_tile_edges.py). Averaging lets a tile that can see
+        # the context outvote one that is guessing from padding.
+        blended, _w = blend_logits(logits, self.tiles, frame.shape[1],
+                                   frame.shape[0], self.size, self.a.taper)
+        raw = (blended > self.thr).astype(np.uint8) * 255
+
         # Shape filtering runs ONCE on the reassembled mask, never per tile. A
         # crack crossing a tile boundary is truncated in both tiles, and a
         # truncated fragment is short, stubby and solid - it would be thrown out
@@ -114,7 +126,16 @@ class Scanner:
                            max_halfwidth=self.max_halfwidth_px,
                            max_solidity=self.a.max_solidity,
                            shape_filter=not self.a.no_shape_filter)
-        return clean, infer_s
+
+        dropped = {}
+        if not self.a.no_verify:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            clean, dropped = verify.apply(
+                clean, gray,
+                max_straightness=self.a.max_straightness,
+                min_valleyness=self.a.min_valleyness,
+                min_len_px=self.a.min_straight_len_mm / self.gsd)
+        return clean, infer_s, dropped
 
     def scan(self):
         """Capture and analyse one scan position. Returns (cameras, totals)."""
@@ -130,7 +151,7 @@ class Scanner:
             if role not in captured:
                 continue
             frame, cstats = captured[role]
-            mask, infer_s = self.infer_frame(frame)
+            mask, infer_s, dropped = self.infer_frame(frame)
             infer_total += infer_s
             m = measure.summarise(mask, self.gsd, min_area=1)
             cams.append({
@@ -148,6 +169,8 @@ class Scanner:
                 "median_luma": cstats["median_luma"],
                 "converged": cstats["converged"],
                 "infer_ms": infer_s * 1000.0,
+                "dropped_straight": dropped.get("straight", 0),
+                "dropped_flat": dropped.get("flat", 0),
             })
 
         widths = [c["widest_mm"] for c in cams if c["widest_mm"] is not None]
@@ -159,6 +182,8 @@ class Scanner:
             "coverage": float(np.mean([c["coverage"] for c in cams])) if cams else 0.0,
             "components": sum(c["components"] for c in cams),
             "widest_mm": max(widths) if widths else None,
+            "dropped_straight": sum(c["dropped_straight"] for c in cams),
+            "dropped_flat": sum(c["dropped_flat"] for c in cams),
             "capture_s": capture_s,
             "infer_s": infer_total,
             "cycle_s": time.perf_counter() - t_start,
@@ -222,6 +247,21 @@ def add_arguments(ap):
                          "single-camera pixel scale")
     ap.add_argument("--max-solidity", type=float, default=0.80)
     ap.add_argument("--no-shape-filter", action="store_true")
+    ap.add_argument("--taper", type=float, default=0.25,
+                    help="fraction of each tile edge that fades out when "
+                         "overlapping tiles are averaged")
+    ap.add_argument("--no-verify", action="store_true",
+                    help="skip the straightness and valley tests")
+    ap.add_argument("--max-straightness", type=float, default=1.12,
+                    help="reject long components straighter than this; 1.0 is a "
+                         "ruled line. Seams and folds are manufactured straight, "
+                         "fractures are not")
+    ap.add_argument("--min-straight-len-mm", type=float, default=40.0,
+                    help="only test straightness above this length - a short "
+                         "crack has no room to wander")
+    ap.add_argument("--min-valleyness", type=float, default=2.0,
+                    help="grey levels a component must be darker than BOTH its "
+                         "sides. A step edge scores 0 at any contrast")
     ap.add_argument("--mm-per-px", type=float, default=0.0,
                     help="measured ground sample distance; overrides --standoff. "
                          "Photograph something of known width and divide.")
@@ -251,6 +291,8 @@ def main():
                   % (tot["scan_index"],
                      "CRACK" if tot["crack"] else "clear",
                      tot["cycle_s"], tot["capture_s"], tot["infer_s"]))
+            print("  dropped: %d too straight, %d not a valley"
+                  % (tot["dropped_straight"], tot["dropped_flat"]))
             for c in cams:
                 print("  %-6s cov %6.3f %%  %3d comp  widest %s  "
                       "exp %4d gain %3d  infer %5.0f ms"
