@@ -1,12 +1,24 @@
 #!/usr/bin/env bash
 # cracknet.sh - start / stop / inspect the whole CrackNet system on the Jetson.
 #
-#   ./cracknet.sh start [serve.py flags...]   bring everything up
-#   ./cracknet.sh stop                        shut it down, release the camera
-#   ./cracknet.sh restart [flags...]          stop then start
-#   ./cracknet.sh status                      what is running, and is it healthy
-#   ./cracknet.sh logs                        follow the server log
-#   ./cracknet.sh check                       preflight only, change nothing
+#   ./cracknet.sh start [flags...]   bring everything up
+#   ./cracknet.sh stop               shut it down, release the cameras
+#   ./cracknet.sh restart [flags...] stop then start
+#   ./cracknet.sh status             what is running, and is it healthy
+#   ./cracknet.sh logs               follow the server log
+#   ./cracknet.sh check              preflight only, change nothing
+#
+# Which server runs is chosen by CRACKNET_MODE:
+#
+#   live    three cameras at 640x480, held open, ~10 fps      (default)
+#   scan    three cameras at 1080p, one position per ~6.5 s
+#   single  the original one-camera server on port 8080
+#
+#   CRACKNET_MODE=scan ./cracknet.sh restart
+#
+# live and scan are the same server (serve_scan.py) and share port 8081, so
+# only one of them runs at a time. single is a different server on a different
+# port and can run alongside, though it will contend for the cameras.
 #
 # start performs, in order: preflight checks -> performance mode -> camera
 # control lock-down -> server. Anything that needs sudo is best-effort: if
@@ -23,18 +35,51 @@ set -u
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR" || exit 1
 
-PIDFILE="$DIR/cracknet.pid"
-LOG="$DIR/serve.log"
-PORT=8080
 ENGINE="cracknet_fp16.engine"
 CAM=/dev/video0
-# Matches the running server but NOT this script's own command line - a looser
-# pattern makes pkill kill the shell that invoked it.
-PATTERN='python3 serve\.py'
+MODE="${CRACKNET_MODE:-live}"
 
-red()  { printf '\033[31m%s\033[0m\n' "$*"; }
-grn()  { printf '\033[32m%s\033[0m\n' "$*"; }
-ylw()  { printf '\033[33m%s\033[0m\n' "$*"; }
+# Each mode needs its own pidfile and log, or stopping one would report on the
+# other and a crashed scan server would look healthy because a live one is up.
+# The pkill patterns match the running server but NOT this script's own command
+# line - a looser pattern makes pkill kill the shell that invoked it.
+case "$MODE" in
+    live)
+        SERVER="serve_scan.py"; PORT=8081; CAMERAS=3
+        ARGS="--mode live"
+        PATTERN='python3 serve_scan\.py.*--mode live'
+        HEALTH="/status.json" ;;
+    scan)
+        SERVER="serve_scan.py"; PORT=8081; CAMERAS=3
+        ARGS="--mode scan"
+        PATTERN='python3 serve_scan\.py.*--mode scan'
+        HEALTH="/status.json" ;;
+    single)
+        SERVER="serve.py"; PORT=8080; CAMERAS=1
+        ARGS=""
+        PATTERN='python3 serve\.py'
+        HEALTH="/snapshot.jpg" ;;
+    *)
+        echo "unknown CRACKNET_MODE '$MODE' (live | scan | single)" >&2
+        exit 2 ;;
+esac
+
+PIDFILE="$DIR/cracknet-$MODE.pid"
+LOG="$DIR/serve-$MODE.log"
+
+# Colour is suppressed when NO_COLOR is set or stdout is not a terminal. The
+# Windows launcher sets it, because a console without VT processing prints the
+# escape sequences literally and a "[33m" in front of every warning looks like
+# the script itself is broken.
+if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then
+    red()  { printf '%s\n' "$*"; }
+    grn()  { printf '%s\n' "$*"; }
+    ylw()  { printf '%s\n' "$*"; }
+else
+    red()  { printf '\033[31m%s\033[0m\n' "$*"; }
+    grn()  { printf '\033[32m%s\033[0m\n' "$*"; }
+    ylw()  { printf '\033[33m%s\033[0m\n' "$*"; }
+fi
 info() { printf '  %-30s %s\n' "$1" "$2"; }
 
 server_pid() {
@@ -72,13 +117,30 @@ check() {
         info "engine" "MISSING - run: bash build_engines.sh"; fail=1
     fi
 
-    if [ -e "$CAM" ]; then
-        local fmt
-        fmt=$(v4l2-ctl -d "$CAM" --get-fmt-video 2>/dev/null |
-              awk -F"'" '/Pixel Format/{print $2}')
-        info "camera" "$CAM ${fmt:+($fmt)}"
+    # Counted through /dev/v4l/by-path, not /dev/video*: the videoN numbers
+    # shuffle on reboot, and each C920 exposes a second metadata node that would
+    # otherwise count every camera twice.
+    local found
+    found=$(ls /dev/v4l/by-path/*-video-index0 2>/dev/null | wc -l)
+    if [ "$found" -ge "$CAMERAS" ]; then
+        info "cameras" "$found present, $CAMERAS needed for mode '$MODE'"
     else
-        info "camera" "NOT PRESENT - plug the C920 into a USB-A port"; fail=1
+        info "cameras" "$found present, NEED $CAMERAS - check the USB-A ports"
+        fail=1
+    fi
+
+    if [ "$CAMERAS" -gt 1 ] && [ ! -f "$DIR/rig.json" ]; then
+        ylw "  rig.json missing - roles fall back to port order, which is a"
+        ylw "  guess. Run: python3 capture.py identify"
+    fi
+
+    # An unlocked GPU idles at 306 MHz of 1020 and understates throughput by
+    # 2.6x. jetson_clocks does not survive a reboot, so this is worth checking
+    # every start rather than assuming it was done once.
+    local gpu
+    gpu=$(cat /sys/devices/platform/bus@0/17000000.gpu/devfreq/17000000.gpu/cur_freq 2>/dev/null)
+    if [ -n "$gpu" ]; then
+        info "gpu clock" "$((gpu / 1000000)) MHz"
     fi
 
     info "power mode" "$(nvpmodel -q 2>/dev/null | head -1 | sed 's/.*: //')"
@@ -108,20 +170,27 @@ start() {
     fi
 
     echo
-    echo "camera"
-    bash camera_setup.sh "$CAM" >/dev/null 2>&1
-    info "focus/exposure" "locked (live.py re-applies after stream start)"
+    echo "cameras"
+    # Every camera, not just video0: each one needs manual exposure set, and the
+    # multi-camera servers re-apply it per camera after its stream starts.
+    local dev
+    for dev in /dev/v4l/by-path/*-video-index0; do
+        [ -e "$dev" ] || continue
+        bash camera_setup.sh "$(readlink -f "$dev")" >/dev/null 2>&1
+    done
+    info "focus/exposure" "locked on $(ls /dev/v4l/by-path/*-video-index0 2>/dev/null | wc -l) camera(s)"
 
     echo
-    echo "server"
-    nohup python3 serve.py --port "$PORT" "$@" > "$LOG" 2>&1 &
+    echo "server ($MODE)"
+    # shellcheck disable=SC2086
+    nohup python3 "$SERVER" --port "$PORT" $ARGS "$@" > "$LOG" 2>&1 &
     echo $! > "$PIDFILE"
 
     # Wait for the port rather than sleeping a fixed amount: engine load plus
     # auto-exposure settling takes 10-20 s depending on the scene.
     local i
     for i in $(seq 1 40); do
-        if curl -sf -o /dev/null "http://127.0.0.1:$PORT/snapshot.jpg" 2>/dev/null; then
+        if curl -sf -o /dev/null "http://127.0.0.1:$PORT$HEALTH" 2>/dev/null; then
             break
         fi
         if ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
@@ -133,9 +202,8 @@ start() {
         sleep 1
     done
 
-    if curl -sf -o /dev/null "http://127.0.0.1:$PORT/snapshot.jpg" 2>/dev/null; then
+    if curl -sf -o /dev/null "http://127.0.0.1:$PORT$HEALTH" 2>/dev/null; then
         grn "  up (pid $(cat "$PIDFILE"))"
-        info "auto-exposure" "$(grep -m1 'auto-exposure settled' "$LOG" | sed 's/.*settled: //')"
         echo
         echo "view at:"
         urls
@@ -170,13 +238,20 @@ stop() {
     pkill -f "$PATTERN" 2>/dev/null     # sweep up any stragglers
     rm -f "$PIDFILE"
 
-    # The camera is the resource worth confirming: a held /dev/video0 blocks
-    # every other script with a confusing "can't open camera by index".
-    if command -v fuser >/dev/null && fuser "$CAM" >/dev/null 2>&1; then
-        ylw "  warning: $CAM still held by pid $(fuser "$CAM" 2>/dev/null)"
-    else
-        grn "  stopped, camera released"
+    # The cameras are the resource worth confirming: a held video node blocks
+    # every other script with a confusing "can't open camera by index", and with
+    # three of them a single stuck node is easy to miss.
+    local held=0 dev
+    if command -v fuser >/dev/null; then
+        for dev in /dev/v4l/by-path/*-video-index0; do
+            [ -e "$dev" ] || continue
+            if fuser "$(readlink -f "$dev")" >/dev/null 2>&1; then
+                ylw "  warning: $(readlink -f "$dev") still held"
+                held=1
+            fi
+        done
     fi
+    [ "$held" -eq 0 ] && grn "  stopped, cameras released"
 }
 
 # ------------------------------------------------------------------- status

@@ -1,3 +1,47 @@
+# One-click control from Windows — `cracknet.bat`
+
+Everything below can be done without opening an SSH session or typing anything
+on the Jetson. Double-click `cracknet.bat` in the project root for a menu, or
+run it with a command:
+
+| Command | Does |
+|---|---|
+| `cracknet live` | Start the 3-camera live preview (~10 fps), then offer to open the dashboard |
+| `cracknet scan` | Start the 3-camera survey scan (~6.5 s per position) |
+| `cracknet stop` | Stop whichever mode is running |
+| `cracknet status` | What is running, and whether the port is listening |
+| `cracknet logs` | Last 40 lines of the server log |
+| `cracknet check` | Preflight only — changes nothing |
+| `cracknet identify` | Capture one labelled frame per camera, for `rig.json` |
+| `cracknet open` | Open the dashboard in a browser |
+| `cracknet shell "cmd"` | Run one command on the Jetson |
+
+`live` and `scan` both **restart** rather than start, because during a demo a
+refusal over an already-running process is the last thing worth debugging.
+
+### How it reaches the Jetson
+
+Through `tools/jssh.py` (paramiko), which reads the host, user and password
+from `tools/.jetson.env`. That file is gitignored and has never been committed.
+If it is missing, the batch file says so and prints the three lines to put in
+it rather than failing with a stack trace.
+
+### Preflight is worth running on its own
+
+`cracknet check` verifies TensorRT, OpenCV, pycuda, numpy, the engine file, the
+camera count, `rig.json`, the GPU clock and the power mode — and **exits
+non-zero if any of it is wrong, which is why `start` refuses to run after a
+failed check.** Two things it catches that are otherwise silent:
+
+- **GPU clock at 306 MHz.** `jetson_clocks` does not survive a reboot, and an
+  unlocked GPU idles at 306 MHz of 1020 — everything is ~2.6× slower with no
+  other symptom.
+- **Camera count.** Counted through `/dev/v4l/by-path`, not `/dev/video*`,
+  because the `videoN` numbers shuffle on reboot and each C920 exposes a second
+  metadata node that would otherwise count every camera twice.
+
+---
+
 # Operating the Jetson from this Windows machine
 
 Everything below is run in **PowerShell on the Windows PC**. The Jetson is
