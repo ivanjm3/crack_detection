@@ -15,16 +15,31 @@ run it with a command:
 | `cracknet identify` | Capture one labelled frame per camera, for `rig.json` |
 | `cracknet open` | Open the dashboard in a browser |
 | `cracknet shell "cmd"` | Run one command on the Jetson |
+| `cracknet join` | Join the Jetson's Wi-Fi AP — one time per PC |
+| `cracknet link` | Which route is live, and is SSH up |
+| `cracknet leave` | Drop the AP, go back to the usual Wi-Fi |
+| `cracknet netmode ap\|wifi` | Switch the Jetson between hosting an AP and rejoining IOT-PROJ |
 
 `live` and `scan` both **restart** rather than start, because during a demo a
 refusal over an already-running process is the last thing worth debugging.
 
 ### How it reaches the Jetson
 
-Through `tools/jssh.py` (paramiko), which reads the host, user and password
-from `tools/.jetson.env`. That file is gitignored and has never been committed.
-If it is missing, the batch file says so and prints the three lines to put in
-it rather than failing with a stack trace.
+Through `tools/jssh.py` (paramiko), which reads the user and password from
+`tools/.jetson.env`. That file is gitignored and has never been committed. If
+it is missing, the batch file says so and prints the lines to put in it rather
+than failing with a stack trace.
+
+**No USB cable is needed.** `JETSON_HOSTS` in that file lists the routes to
+try — the Jetson's own Wi-Fi AP (`10.42.0.1`) first, the USB link
+(`192.168.55.1`) as a fallback — and the first one that answers on port 22 is
+used. Plugging or unplugging USB therefore changes nothing.
+
+The campus Wi-Fi cannot carry this: IOT-PROJ has client isolation and the wired
+jack will not lease to an unregistered MAC, both measured. That is why the
+Jetson hosts its own AP instead. See [network-link.md](network-link.md) for the
+evidence, the one-time setup and the trade-off (in AP mode the Jetson has no
+internet).
 
 ### Preflight is worth running on its own
 
@@ -55,8 +70,9 @@ reached over SSH; nothing here needs a monitor or keyboard attached to the board
 | --- | --- |
 | User | `sarah` |
 | Password | (ask — not stored in this repo) |
+| **AP address** | **`10.42.0.1`** — the Jetson's own `CrackNet` AP; pinned, no cable needed |
 | **USB link address** | **`192.168.55.1`** — stable, always works when the USB cable is connected |
-| Wi-Fi address | `172.16.61.175` — DHCP lease on `IOT-PROJ`, **changes**; confirm before relying on it |
+| Wi-Fi client address | DHCP lease on `IOT-PROJ`, **changes** — and unreachable from this PC anyway, see [network-link.md](network-link.md) |
 | Project directory | `/home/sarah/cracknet` |
 | Viewer port | `8080` |
 

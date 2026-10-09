@@ -8,15 +8,19 @@ scratch every time a session's temp folder is cleared. It runs on the HOST
 Credentials come from the environment so they stay out of git:
 
     # PowerShell
-    $env:JETSON_HOST = "192.168.55.1"; $env:JETSON_USER = "sarah"; $env:JETSON_PASS = "..."
+    $env:JETSON_HOSTS = "10.42.0.1,192.168.55.1"; $env:JETSON_PASS = "..."
     # bash
-    export JETSON_HOST=192.168.55.1 JETSON_USER=sarah JETSON_PASS=...
+    export JETSON_HOSTS=10.42.0.1,192.168.55.1 JETSON_USER=sarah JETSON_PASS=...
 
 or put them in a .jetson.env file next to this script (gitignored):
 
-    JETSON_HOST=192.168.55.1
+    JETSON_HOSTS=10.42.0.1,192.168.55.1
     JETSON_USER=sarah
     JETSON_PASS=...
+
+JETSON_HOSTS is tried in order and the first route that accepts TCP 22 wins,
+so the same command works over the Jetson's own Wi-Fi AP or the USB link with
+nothing to reconfigure. JETSON_HOST still works and is tried first.
 
 Usage
     python jssh.py "nvpmodel -q"                    run a command
@@ -54,24 +58,72 @@ def credentials():
                     k, v = line.split("=", 1)
                     values[k.strip()] = v.strip()
 
-    host = os.environ.get("JETSON_HOST", values.get("JETSON_HOST", "192.168.55.1"))
+    # A list, because the board is reachable by more than one route and which
+    # one is live depends on how it is plugged in right now:
+    #   10.42.0.1      its own Wi-Fi AP  (netlink.sh ap) - no cables
+    #   192.168.55.1   the USB gadget link
+    # Probing beats configuring: nothing has to be edited when the link changes.
+    hosts = os.environ.get("JETSON_HOSTS", values.get("JETSON_HOSTS", ""))
+    single = os.environ.get("JETSON_HOST", values.get("JETSON_HOST", ""))
+    if single:
+        hosts = single + ("," + hosts if hosts else "")
+    if not hosts:
+        hosts = "10.42.0.1,192.168.55.1"
+    hosts = [h.strip() for h in hosts.split(",") if h.strip()]
+
     user = os.environ.get("JETSON_USER", values.get("JETSON_USER", "sarah"))
     pw = os.environ.get("JETSON_PASS", values.get("JETSON_PASS"))
     if not pw:
         sys.exit("No password. Set JETSON_PASS, or create tools/.jetson.env "
                  "(see the docstring).")
-    return host, user, pw
+    return hosts, user, pw
 
 
-HOST, USER, PW = credentials()
+HOSTS, USER, PW = credentials()
+HOST = HOSTS[0]          # overwritten by connect() with whichever answered
+
+
+def reachable(host, port=22, timeout=1.5):
+    """True if something accepts TCP on host:port.
+
+    A short TCP probe rather than paramiko's own connect: a dead candidate
+    costs 1.5 s instead of the 20 s SSH timeout, so walking a list of routes
+    stays fast enough to do on every single command.
+    """
+    import socket
+    s = socket.socket()
+    s.settimeout(timeout)
+    try:
+        s.connect((host, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
 
 
 def connect():
-    c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(HOST, username=USER, password=PW, timeout=20,
-              look_for_keys=False, allow_agent=False)
-    return c
+    global HOST
+    candidates = [h for h in HOSTS if reachable(h)] if len(HOSTS) > 1 else HOSTS
+    if not candidates:
+        sys.exit("Cannot reach the Jetson on any of: " + ", ".join(HOSTS) +
+                 "\n  - powered on?\n"
+                 "  - on the AP link, join the CrackNet Wi-Fi first\n"
+                 "  - on the USB link, check the cable")
+
+    last = None
+    for host in candidates:
+        c = paramiko.SSHClient()
+        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            c.connect(host, username=USER, password=PW, timeout=20,
+                      look_for_keys=False, allow_agent=False)
+        except Exception as exc:         # try the next route, report the last
+            last = exc
+            continue
+        HOST = host
+        return c
+    sys.exit("SSH failed on %s: %s" % (", ".join(candidates), last))
 
 
 def run(c, cmd, use_sudo, timeout):
