@@ -23,6 +23,8 @@ REM     cracknet link         which route is live, is SSH up
 REM     cracknet leave        drop the AP, go back to the usual Wi-Fi
 REM     cracknet netmode ap   tell the Jetson to host the AP (default)
 REM     cracknet netmode wifi tell the Jetson to rejoin the campus Wi-Fi
+REM     cracknet net "cmd"    run cmd on the Jetson WITH this PC's internet
+REM                           (apt, pip) - no admin, no ICS, AP stays up
 REM
 REM  No SSH session to open and nothing to type on the Jetson. Commands go over
 REM  the network through tools\jssh.py, which uses paramiko and reads the user
@@ -124,6 +126,7 @@ if /i "%CMD%"=="join"     goto :join
 if /i "%CMD%"=="leave"    goto :leave
 if /i "%CMD%"=="link"     goto :link
 if /i "%CMD%"=="netmode"  goto :netmode
+if /i "%CMD%"=="net"      goto :net
 echo [X] Unknown command "%CMD%". Run cracknet with no arguments for the menu.
 goto :end
 
@@ -197,6 +200,18 @@ goto :end
 
 :link
 %PY% tools\jlink.py status
+goto :end
+
+:net
+if "%~2"=="" (
+    echo Usage: cracknet net "sudo apt-get update"
+    echo.
+    echo   Runs the command on the Jetson with this PC's internet tunnelled
+    echo   over the SSH session. No admin rights, no Internet Connection
+    echo   Sharing, and the CrackNet AP stays up. HTTP/HTTPS tools only.
+    goto :end
+)
+%PY% tools\jproxy.py "%~2"
 goto :end
 
 :netmode

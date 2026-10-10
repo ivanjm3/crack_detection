@@ -96,7 +96,25 @@ cmd /c "set JETSON_HOSTS=10.42.0.1 && cracknet check"
 
 ---
 
-## Give the Jetson internet back
+## Give the Jetson internet (apt / pip) without leaving AP mode
+
+Tunnels this PC's internet over the SSH session. No admin rights, no Internet
+Connection Sharing, no cable, and the `CrackNet` AP stays up.
+
+```powershell
+.\cracknet.bat net "sudo apt-get update"
+```
+
+```powershell
+.\cracknet.bat net "sudo apt-get install -y python3-pip"
+```
+
+HTTP and HTTPS tools only. The tunnel exists only while the command runs and
+writes nothing into the Jetson's apt or pip configuration.
+
+---
+
+## Give the Jetson internet back (the heavy way)
 
 **In AP mode the Jetson has no internet** — the radio does AP *or* client,
 never both. Needed before `apt-get`, e.g. installing Gazebo:
