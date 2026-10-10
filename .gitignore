@@ -4,7 +4,7 @@
 *.pt
 *.onnx
 *.onnx.data
-
+paper/
 # TensorRT engines are built on-device and are tied to that specific board and
 # TensorRT version. Never commit or copy them — build_engines.sh regenerates.
 *.engine
