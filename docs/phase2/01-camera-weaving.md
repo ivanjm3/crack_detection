@@ -21,7 +21,7 @@ The model takes a fixed 512×512 input. Stitching three 1920-wide frames gives a
 | One 1080p camera, native tiles | 0.29 |
 | Three cameras stitched into 512 | ~3.2 |
 
-A 2 px crack becomes 0.31 px — it stops existing. The whole reason for three
+A 2 px crack becomes 0.18 px — it stops existing. The whole reason for three
 cameras is to cover more ground *without* losing resolution, so a design that
 spends the resolution to gain the coverage defeats itself.
 

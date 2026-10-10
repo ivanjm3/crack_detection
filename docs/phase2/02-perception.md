@@ -272,7 +272,7 @@ gsd = 2 · standoff · tan(hfov/2) / width_px
 ```
 
 **hfov is 70.42°, the C920's horizontal field at 16:9 — not the 78° diagonal
-from the datasheet.** Using the diagonal would overstate the swath by ~11% and
+from the datasheet.** Using the diagonal would overstate the swath by ~15% and
 every width would inherit that error.
 
 At 0.40 m, 1920 px wide: **0.294 mm/px**, swath 1.69 m across three cameras,

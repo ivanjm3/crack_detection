@@ -140,9 +140,9 @@ Note: sweep IoU/Dice (0.656/0.792) differ slightly from the per-epoch log
 ### Perception
 | Fact | Value | Source |
 |---|---|---|
-| hfov | **70.42°** horizontal at 16:9 (78° is the diagonal; using it overstates swath ~11%) | `02-perception.md` §6 |
+| hfov | **70.42°** horizontal at 16:9 (78° is the diagonal; using it overstates swath ~15%: tan 39° / tan 35.21° = 1.148) | `02-perception.md` §6 |
 | GSD @ 0.40 m, 1920 px | 0.294 mm/px; swath 0.56 m/camera; 2-px crack ≈ 0.59 mm | formula `2·d·tan(hfov/2)/W` |
-| Stitching rejected | 5760 px → 512 is ×0.089: 2-px crack → 0.31 px; seams are crack-shaped | `01-camera-weaving.md` §1 |
+| Stitching rejected | 5760 px → 512 is ×0.089: 2-px crack → 0.18 px (0.31 px was for the earlier 3328-px mosaic plan); seams are crack-shaped | `01-camera-weaving.md` §1 |
 | Tiling | 512², 15% overlap, 15 tiles @1080p, 6 @720p; edge tiles clamped not padded | `tiler.plan_tiles` (re-run) |
 | vs Phase 1 | 1.8× swath, 2.1× finer, simultaneously | `02-perception.md` §1 |
 | Tile-border artefact | 2.18× raw, **11.33× after clean_mask**; 3 frames × 15 tiles | `analyze_tile_edges.py` |
@@ -212,6 +212,10 @@ the rest.
 6. Console is **unauthenticated** and binds `0.0.0.0`.
 7. Server does not survive reboot (`nohup`, not a service).
 8. Training hyper-parameters not recorded (§4).
+9. **1080p field of view is unverified.** `jetson/check_fov_parity.py` was written to
+   test that 1080p reads the whole sensor (not a cropped window) but no result is
+   recorded anywhere. If 1080p is cropped, every GSD is too large and every width
+   overstated by the same factor. The paper lists this under threats to validity.
 
 ---
 
