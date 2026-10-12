@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>CrackNet alarm</title>
+<style>
+  :root { --bg: #ffffff; --fg: #111111; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 600 clamp(28px, 9vw, 64px)/1.15 system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; gap: 1.2rem;
+    -webkit-user-select: none; user-select: none; touch-action: manipulation;
+  }
+  body.clear { --bg: #ffffff; --fg: #111111; }
+  body.crack { --bg: #e00000; --fg: #ffffff; }
+  body.crack.flip { --bg: #5a0000; }          /* the flash */
+  body.nolink { --bg: #444444; --fg: #ffffff; }
+  small { font: 400 16px/1.4 system-ui, sans-serif; opacity: .75; max-width: 30ch; }
+  button {
+    font: 600 20px system-ui, sans-serif; padding: .8em 1.6em; border-radius: 12px;
+    border: 2px solid currentColor; background: transparent; color: inherit;
+  }
+  #arm { font-size: 28px; padding: 1em 1.6em; }
+  #mute { display: none; }
+</style>
+</head>
+<body class="nolink">
+  <div id="msg">Tap to arm</div>
+  <small id="sub">Browsers only allow sound after a tap. Do this once, then leave the screen on.</small>
+  <button id="arm">ARM ALARM</button>
+  <button id="mute">Mute</button>
+
+<script>
+(function () {
+  "use strict";
+  var POLL_MS = 500;         // status poll
+  var STALE_MS = 30000;      // no new scan for this long -> treat as no link
+  var BEEP_MS = 220;         // on/off period of the buzzer and the flash
+  var FREQ = 2200;           // Hz: a piezo-ish square tone
+
+  var msg = document.getElementById("msg"), sub = document.getElementById("sub");
+  var armBtn = document.getElementById("arm"), muteBtn = document.getElementById("mute");
+
+  var armed = false, muted = false, state = "nolink";
+  var ctx = null, osc = null, gain = null, flashTimer = null, wake = null;
+  var lastIndex = null, lastChange = 0, lastOk = 0;
+
+  function setState(s, text, small) {
+    state = s;
+    document.body.classList.remove("clear", "crack", "nolink", "flip");
+    document.body.classList.add(s);
+    msg.textContent = text;
+    if (small !== undefined) sub.textContent = small;
+    document.querySelector('meta[name="theme-color"]')
+      .setAttribute("content", s === "crack" ? "#e00000" : s === "clear" ? "#ffffff" : "#444444");
+  }
+
+  /* ---- buzzer: one oscillator, gated on and off ---- */
+  function startAudio() {
+    if (osc) return;
+    ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === "suspended") ctx.resume();
+    gain = ctx.createGain(); gain.gain.value = 0;
+    osc = ctx.createOscillator(); osc.type = "square"; osc.frequency.value = FREQ;
+    osc.connect(gain); gain.connect(ctx.destination); osc.start();
+  }
+  function gate(on) {
+    if (gain) gain.gain.setTargetAtTime(on && !muted ? 1 : 0, ctx.currentTime, 0.005);
+  }
+
+  function startFlash() {
+    if (flashTimer) return;
+    var on = false;
+    flashTimer = setInterval(function () {
+      on = !on;
+      document.body.classList.toggle("flip", !on);
+      gate(on);
+      if (on && navigator.vibrate) navigator.vibrate(BEEP_MS);
+    }, BEEP_MS);
+  }
+  function stopFlash() {
+    if (flashTimer) { clearInterval(flashTimer); flashTimer = null; }
+    document.body.classList.remove("flip");
+    gate(false);
+  }
+
+  /* ---- keep the phone from sleeping (needs HTTPS on most browsers) ---- */
+  function keepAwake() {
+    if (navigator.wakeLock && navigator.wakeLock.request) {
+      navigator.wakeLock.request("screen").then(function (l) { wake = l; }, function () {});
+    }
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (armed && document.visibilityState === "visible") keepAwake();
+  });
+
+  /* ---- polling ---- */
+  function poll() {
+    var ctl = new AbortController();
+    var t = setTimeout(function () { ctl.abort(); }, 2500);
+    fetch("status.json?_=" + Date.now(), { cache: "no-store", signal: ctl.signal })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (st) {
+        clearTimeout(t);
+        var now = Date.now();
+        lastOk = now;
+        // scan_index advances once per scan; if it stops, the loop has hung
+        // even though the HTTP server still answers.
+        if (st.scan_index !== undefined) {
+          if (st.scan_index !== lastIndex) { lastIndex = st.scan_index; lastChange = now; }
+          if (now - lastChange > STALE_MS) return noLink("scanner stalled");
+        }
+        if (st.crack) {
+          var w = st.widest_mm ? " " + Number(st.widest_mm).toFixed(1) + " mm" : "";
+          setState("crack", "CRACK" + w, "coverage " + (100 * (st.coverage || 0)).toFixed(2) + " %");
+          if (armed) startFlash();
+        } else {
+          stopFlash();
+          setState("clear", "No crack", "scan " + (st.scan_index === undefined ? "-" : st.scan_index));
+        }
+      })
+      .catch(function () { clearTimeout(t); noLink("no link to the Jetson"); });
+  }
+  // Grey, never white: white means "checked and clear", and a dead link is not that.
+  function noLink(why) {
+    stopFlash();
+    setState("nolink", "NO LINK", why);
+  }
+  setInterval(poll, POLL_MS);
+
+  armBtn.addEventListener("click", function () {
+    armed = true;
+    startAudio();
+    gate(true); setTimeout(function () { gate(false); }, 120);   // audible confirmation
+    if (navigator.vibrate) navigator.vibrate(80);
+    keepAwake();
+    armBtn.style.display = "none"; muteBtn.style.display = "inline-block";
+    sub.textContent = "armed";
+    poll();
+  });
+  muteBtn.addEventListener("click", function () {
+    muted = !muted; muteBtn.textContent = muted ? "Unmute" : "Mute"; gate(false);
+  });
+  poll();
+})();
+</script>
+</body>
+</html>

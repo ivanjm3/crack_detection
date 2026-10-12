@@ -63,6 +63,25 @@ preflight. If it stops with a list of checks, that list *is* the answer.
 
 ---
 
+## Phone alarm (buzzer + red flash)
+
+Any phone on the `CrackNet` Wi-Fi becomes a siren. Nothing to install.
+
+1. On the phone: join Wi-Fi **CrackNet**.
+2. Chrome: open `http://10.42.0.1:8081/alarm`
+3. Tap **ARM ALARM** once (browsers refuse sound before a tap). Turn the volume up.
+
+| Screen | Meaning |
+|---|---|
+| White, "No crack" | scanner is running and the last scan was clear |
+| Flashing red + buzzer | a crack was reported; shows widest mm |
+| Grey, "NO LINK" | phone cannot reach the Jetson, or no new scan for 30 s |
+
+Grey is deliberate: a dead link must never look like "all clear".
+Set the phone's screen timeout to *Never* and keep Chrome in the foreground;
+a sleeping screen mutes the buzzer. Port 8081 is the 3-camera console
+(`cracknet start`); the single-camera `serve.py` is on 8080 and has no alarm page.
+
 ## Network link
 
 ```powershell

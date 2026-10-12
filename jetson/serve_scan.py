@@ -44,8 +44,14 @@ PAGE_CANDIDATES = (
 )
 
 
-def load_page():
-    for path in PAGE_CANDIDATES:
+ALARM_CANDIDATES = (
+    os.path.join(HERE, "alarm.html"),
+    os.path.join(HERE, "..", "viewer", "alarm.html"),
+)
+
+
+def load_page(candidates=PAGE_CANDIDATES):
+    for path in candidates:
         if os.path.exists(path):
             with open(path, "rb") as f:
                 return f.read()
@@ -371,6 +377,7 @@ class ScanLoop(threading.Thread):
 
 PIPE = None
 PAGE = None
+ALARM = None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -397,6 +404,8 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", PAGE)
+        elif path in ("/alarm", "/alarm.html"):
+            self._send(200, "text/html; charset=utf-8", ALARM)
         elif path == "/status.json":
             self._send(200, "application/json", json.dumps(PIPE.status).encode())
         elif path == "/events.json":
@@ -453,7 +462,7 @@ class Server(ThreadingHTTPServer):
 
 
 def main():
-    global PIPE, PAGE
+    global PIPE, PAGE, ALARM
     ap = scanner.add_arguments(argparse.ArgumentParser())
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--host", default="0.0.0.0")
@@ -471,6 +480,7 @@ def main():
     args = ap.parse_args()
 
     PAGE = load_page()
+    ALARM = load_page(ALARM_CANDIDATES)
     PIPE = ScanLoop(args)
     PIPE.start()
 

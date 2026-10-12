@@ -255,6 +255,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, "text/html; charset=utf-8", PAGE.read_bytes())
             except OSError:
                 self._send(500, "text/plain", b"viewer/dashboard.html not found")
+        elif path in ("/alarm", "/alarm.html"):
+            self._send(200, "text/html; charset=utf-8",
+                       (PAGE.parent / "alarm.html").read_bytes())
         elif path == "/status.json":
             self._send(200, "application/json", json.dumps(PIPE.status).encode())
         elif path == "/events.json":
