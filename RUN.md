@@ -21,17 +21,30 @@ cd C:\Users\student\Desktop\rp_proj
 ```
 
 ```powershell
+.\cracknet.bat push
+```
+
+```powershell
 .\cracknet.bat live
 ```
 
-`live` runs preflight, applies `jetson_clocks`, locks exposure on every camera,
-starts the server, waits for the port, then asks `Open it now? [Y/n]` — press
-Enter.
+`push` copies the server, launcher and both pages (dashboard + alarm) to the
+Jetson. Needed once after any code change; harmless otherwise.
+
+`live` locks the GPU clocks, runs preflight, locks exposure on every camera,
+starts the server, waits for the port, prints the dashboard **and** phone-alarm
+URLs, then asks `Open the dashboard now? [Y/n]` — press Enter.
 
 Dashboard:
 
 ```
 http://10.42.0.1:8081/
+```
+
+Phone alarm (phone on Wi-Fi `CrackNet`):
+
+```
+http://10.42.0.1:8081/alarm
 ```
 
 **Plug the three cameras in first.** `live` refuses to start after a failed
@@ -49,6 +62,10 @@ preflight. If it stops with a list of checks, that list *is* the answer.
 | Why won't it start? | `.\cracknet.bat logs` |
 | Stop, release the cameras | `.\cracknet.bat stop` |
 | Reopen the dashboard | `.\cracknet.bat open` |
+| Phone alarm: URL, steps, open it here | `.\cracknet.bat alarm` |
+| CrackNet Wi-Fi password | `.\cracknet.bat psk` |
+| Copy code + pages to the Jetson | `.\cracknet.bat push` |
+| Lock GPU clocks (lost on reboot) | `.\cracknet.bat clocks` |
 | Check hardware only | `.\cracknet.bat check` |
 
 ```powershell
@@ -60,6 +77,10 @@ preflight. If it stops with a list of checks, that list *is* the answer.
 ```
 
 `live` and `scan` **restart** rather than start, so running one twice is safe.
+
+The alarm page is served by the same process as the dashboard, so `live`/`scan`
+start it and `stop` ends it. Phones then show grey **NO LINK**, on purpose.
+Restarting also drops every phone's connection: **reload and tap ARM again**.
 
 ---
 

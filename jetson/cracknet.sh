@@ -94,6 +94,13 @@ urls() {
         awk -v p="$PORT" '{split($3,a,"/"); if (a[1] != "") print "    http://"a[1]":"p"/"}'
 }
 
+# The phone page. Same server, same port, so it is up exactly when the
+# dashboard is. Printed separately because it is the URL you type on a phone.
+alarm_urls() {
+    ip -4 -brief addr | grep -vE '^(lo|docker)' |
+        awk -v p="$PORT" '{split($3,a,"/"); if (a[1] != "") print "    http://"a[1]":"p"/alarm"}'
+}
+
 # ---------------------------------------------------------------- preflight
 check() {
     local fail=0
@@ -127,6 +134,12 @@ check() {
     else
         info "cameras" "$found present, NEED $CAMERAS - check the USB-A ports"
         fail=1
+    fi
+
+    if [ -f "$DIR/alarm.html" ] || [ -f "$DIR/../viewer/alarm.html" ]; then
+        info "alarm page" "alarm.html present"
+    else
+        ylw "  alarm.html missing - /alarm will 404. Run: cracknet push"
     fi
 
     if [ "$CAMERAS" -gt 1 ] && [ ! -f "$DIR/rig.json" ]; then
@@ -205,8 +218,15 @@ start() {
     if curl -sf -o /dev/null "http://127.0.0.1:$PORT$HEALTH" 2>/dev/null; then
         grn "  up (pid $(cat "$PIDFILE"))"
         echo
-        echo "view at:"
+        echo "dashboard:"
         urls
+        echo "phone alarm (join Wi-Fi CrackNet, tap ARM):"
+        alarm_urls
+        if curl -sf -o /dev/null "http://127.0.0.1:$PORT/alarm" 2>/dev/null; then
+            info "alarm page" "serving"
+        else
+            ylw "  /alarm did not answer - run: cracknet push, then restart"
+        fi
     else
         red "  no frames after 40 s - check: ./cracknet.sh logs"
         return 1
@@ -223,6 +243,8 @@ stop() {
         return 0
     fi
 
+    # Phones on /alarm go grey ("NO LINK") a moment after this - by design:
+    # a stopped scanner must never look like an all-clear.
     kill "$pid" 2>/dev/null
     local i
     for i in $(seq 1 10); do
@@ -294,7 +316,15 @@ print("  %-30s exp=%s gain=%s median=%s clipped=%.1f%%" % (
 ' 2>/dev/null || info "status.json" "$js"
     fi
 
-    [ -n "$pid" ] && { echo; echo "view at:"; urls; }
+    if [ -n "$pid" ]; then
+        echo; echo "dashboard:"; urls
+        echo "phone alarm:"; alarm_urls
+        if curl -sf -o /dev/null --max-time 3 "http://127.0.0.1:$PORT/alarm" 2>/dev/null; then
+            info "alarm page" "serving"
+        else
+            info "alarm page" "NOT answering"
+        fi
+    fi
     return 0
 }
 

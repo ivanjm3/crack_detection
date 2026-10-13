@@ -14,6 +14,10 @@ REM     cracknet logs         last 40 lines of the server log
 REM     cracknet check        preflight only - changes nothing
 REM     cracknet identify     label each camera so rig.json can be written
 REM     cracknet open         open the dashboard in a browser
+REM     cracknet alarm        show + open the phone alarm page (buzzer, red flash)
+REM     cracknet push         copy code + pages to the Jetson (then live/scan)
+REM     cracknet clocks       lock GPU clocks (MAXN_SUPER + jetson_clocks)
+REM     cracknet psk          print the CrackNet Wi-Fi password
 REM     cracknet shell "cmd"  run one command on the Jetson
 REM
 REM  Link management (no USB cable needed):
@@ -88,6 +92,8 @@ echo     5  Logs
 echo     6  Preflight check
 echo     7  Identify cameras
 echo     8  Open dashboard
+echo     A  Phone alarm page      buzzer + red flash
+echo     P  Push code to Jetson
 echo     ---------------------------------------------
 echo     9  Join the Jetson Wi-Fi    (no USB needed)
 echo     L  Link status
@@ -103,6 +109,8 @@ if "%choice%"=="5" set "CMD=logs"
 if "%choice%"=="6" set "CMD=check"
 if "%choice%"=="7" set "CMD=identify"
 if "%choice%"=="8" set "CMD=open"
+if /i "%choice%"=="A" set "CMD=alarm"
+if /i "%choice%"=="P" set "CMD=push"
 if "%choice%"=="9" set "CMD=join"
 if /i "%choice%"=="L" set "CMD=link"
 if "%choice%"=="0" goto :end
@@ -121,6 +129,10 @@ if /i "%CMD%"=="logs"     goto :logs
 if /i "%CMD%"=="check"    goto :check
 if /i "%CMD%"=="identify" goto :identify
 if /i "%CMD%"=="open"     goto :open
+if /i "%CMD%"=="alarm"    goto :alarm
+if /i "%CMD%"=="push"     goto :push
+if /i "%CMD%"=="clocks"   goto :clocks
+if /i "%CMD%"=="psk"      goto :psk
 if /i "%CMD%"=="shell"    goto :shell
 if /i "%CMD%"=="join"     goto :join
 if /i "%CMD%"=="leave"    goto :leave
@@ -132,6 +144,7 @@ goto :end
 
 :start_live
 echo Starting LIVE preview on %HOST% ...
+call :clocks_quiet
 REM restart, not start: start refuses when something is already up, which during
 REM a demo is the moment you least want to debug a stale process.
 call :run "cd %REMOTE% && CRACKNET_MODE=live ./cracknet.sh restart"
@@ -139,14 +152,16 @@ goto :after_start
 
 :start_scan
 echo Starting SCAN survey on %HOST% ...
+call :clocks_quiet
 call :run "cd %REMOTE% && CRACKNET_MODE=scan ./cracknet.sh restart"
 goto :after_start
 
 :after_start
 echo.
-echo   Dashboard: http://%HOST%:8081/
+echo   Dashboard   : http://%HOST%:8081/
+echo   Phone alarm : http://10.42.0.1:8081/alarm   (phone on Wi-Fi CrackNet)
 set "ans="
-set /p "ans=  Open it now? [Y/n] "
+set /p "ans=  Open the dashboard now? [Y/n] "
 if /i "!ans!"=="n" goto :end
 start "" "http://%HOST%:8081/"
 goto :end
@@ -179,6 +194,41 @@ goto :end
 :open
 start "" "http://%HOST%:8081/"
 goto :end
+
+:alarm
+echo.
+echo   Phone alarm page - buzzer + flashing red on a crack, white when clear,
+echo   grey NO LINK if the Jetson stops answering.
+echo.
+echo     1  phone: join Wi-Fi  CrackNet   (password: cracknet psk shows it)
+echo     2  Chrome: open       http://10.42.0.1:8081/alarm
+echo     3  tap ARM ALARM once, volume up, screen timeout = Never
+echo.
+echo   From this PC:           http://%HOST%:8081/alarm
+start "" "http://%HOST%:8081/alarm"
+goto :end
+
+:push
+REM Copies only; a running server keeps the code it started with, so the
+REM next step is always live or scan (both restart).
+%PY% tools\jdeploy.py %~2
+goto :end
+
+:psk
+%PY% "%JSSH%" --sudo "export NO_COLOR=1; cd %REMOTE% && ./netlink.sh psk"
+goto :end
+
+:clocks
+call :clocks_quiet
+echo GPU clocks requested (MAXN_SUPER + jetson_clocks).
+goto :end
+
+:clocks_quiet
+REM An unlocked GPU idles at 306 MHz and runs inference ~2.6x slower; it does
+REM not survive a reboot. cracknet.sh skips this when it has no passwordless
+REM sudo, so it is done here over SSH where the password is known.
+%PY% "%JSSH%" --sudo "nvpmodel -m 2; jetson_clocks" >nul 2>&1
+exit /b
 
 :shell
 if "%~2"=="" (

@@ -14,7 +14,7 @@ The capture+inference loop runs in one background thread and publishes the
 latest encoded JPEG; HTTP handlers only ever read that, so any number of
 viewers (or none) cannot slow inference down.
 """
-import argparse, json, threading, time
+import argparse, json, os, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import cv2
@@ -202,6 +202,14 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", PAGE)
+        elif path in ("/alarm", "/alarm.html"):
+            here = os.path.dirname(os.path.abspath(__file__))
+            for p in (os.path.join(here, "alarm.html"),
+                      os.path.join(here, "..", "viewer", "alarm.html")):
+                if os.path.exists(p):
+                    with open(p, "rb") as f:
+                        return self._send(200, "text/html; charset=utf-8", f.read())
+            self._send(404, "text/plain", b"alarm.html not found")
         elif path == "/status.json":
             self._send(200, "application/json",
                        json.dumps(PIPE.status).encode())

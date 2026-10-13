@@ -14,6 +14,10 @@ run it with a command:
 | `cracknet check` | Preflight only — changes nothing |
 | `cracknet identify` | Capture one labelled frame per camera, for `rig.json` |
 | `cracknet open` | Open the dashboard in a browser |
+| `cracknet alarm` | Phone alarm: print the steps and open `/alarm` here |
+| `cracknet push` | Copy server, launcher and both pages to the Jetson (no restart) |
+| `cracknet clocks` | Lock GPU clocks: `nvpmodel -m 2` + `jetson_clocks` |
+| `cracknet psk` | Print the CrackNet Wi-Fi password (never stored in the repo) |
 | `cracknet shell "cmd"` | Run one command on the Jetson |
 | `cracknet join` | Join the Jetson's Wi-Fi AP — one time per PC |
 | `cracknet link` | Which route is live, and is SSH up |
